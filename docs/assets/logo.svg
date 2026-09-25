@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">AI agent for GitLab</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4338ca"/>
+      <stop offset="1" stop-color="#7c3aed"/>
+    </linearGradient>
+    <linearGradient id="face" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#e0e7ff"/>
+    </linearGradient>
+  </defs>
+
+  <!-- tile -->
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+
+  <!-- antenna -->
+  <line x1="256" y1="92" x2="256" y2="142" stroke="#e0e7ff" stroke-width="16" stroke-linecap="round"/>
+  <circle cx="256" cy="84" r="22" fill="#22d3ee"/>
+
+  <!-- ears -->
+  <rect x="84" y="226" width="40" height="92" rx="20" fill="#c7d2fe"/>
+  <rect x="388" y="226" width="40" height="92" rx="20" fill="#c7d2fe"/>
+
+  <!-- head -->
+  <rect x="112" y="142" width="288" height="268" rx="84" fill="url(#face)"/>
+
+  <!-- eyes -->
+  <circle cx="196" cy="242" r="30" fill="#1e1b4b"/>
+  <circle cx="316" cy="242" r="30" fill="#1e1b4b"/>
+  <circle cx="206" cy="232" r="10" fill="#22d3ee"/>
+  <circle cx="326" cy="232" r="10" fill="#22d3ee"/>
+
+  <!-- mouth: a merge-request branch glyph -->
+  <g fill="none" stroke="#4338ca" stroke-width="14" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M196 314 V360"/>
+    <path d="M196 314 C196 344 316 334 316 360"/>
+  </g>
+  <circle cx="196" cy="314" r="15" fill="#7c3aed"/>
+  <circle cx="196" cy="362" r="15" fill="#4338ca"/>
+  <circle cx="316" cy="362" r="15" fill="#22d3ee"/>
+</svg>

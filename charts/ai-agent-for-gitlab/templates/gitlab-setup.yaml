@@ -1,0 +1,103 @@
+{{- if .Values.gitlabSetup.enabled }}
+{{- $name := include "ai-agent.setupName" . }}
+{{- $botSecret := include "ai-agent.botTokenSecretName" . }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "ai-agent.labels" . | nindent 4 }}
+---
+# Least privilege: read/update only the bot-token Secret (create can't be
+# narrowed by name in RBAC) and restart only this release's Deployment.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "ai-agent.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: [{{ $botSecret | quote }}]
+    verbs: ["get", "patch"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    resourceNames: [{{ include "ai-agent.fullname" . | quote }}]
+    verbs: ["patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "ai-agent.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $name }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $name }}
+    namespace: {{ .Release.Namespace }}
+{{- if .Values.gitlabSetup.avatar }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}-avatar
+  labels:
+    {{- include "ai-agent.labels" . | nindent 4 }}
+binaryData:
+  bot-avatar.png: {{ .Files.Get "files/bot-avatar.png" | b64enc }}
+{{- end }}
+---
+# Runs once per install/upgrade. Post-hook, so the ServiceAccount, Role,
+# ConfigMap and the chart Secret (admin token, webhook secret) already exist.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "ai-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gitlab-setup
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        {{- include "ai-agent.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: gitlab-setup
+    spec:
+      {{- include "ai-agent.setupPodSpec" . | nindent 6 }}
+---
+# Re-sync: adds the bot to groups created since, rotates the token before expiry.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "ai-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gitlab-setup
+spec:
+  schedule: {{ .Values.gitlabSetup.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            {{- include "ai-agent.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: gitlab-setup
+        spec:
+          {{- include "ai-agent.setupPodSpec" . | nindent 10 }}
+{{- end }}

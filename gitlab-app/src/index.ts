@@ -249,8 +249,22 @@ app.post("/webhook", async (c) => {
     return c.text("unauthorized", 401);
   }
 
+  // System hooks (instance-wide, created by the chart's gitlabSetup) send every
+  // event as "System Hook". Merge request events carry the same payload as a
+  // project hook's "Merge Request Hook"; all other system events (project_create,
+  // user_add_to_group, ...) are always sent and ignored here.
+  let isMergeRequestEvent = gitlabEvent === "Merge Request Hook";
+  if (gitlabEvent === "System Hook") {
+    const { object_kind } = await c.req.json<{ object_kind?: string }>();
+    if (object_kind !== "merge_request") {
+      logger.debug("Ignoring system hook event", { objectKind: object_kind });
+      return c.text("ignored");
+    }
+    isMergeRequestEvent = true;
+  }
+
   // Merge request events trigger a review when the AI user is requested as reviewer/assignee
-  if (gitlabEvent === "Merge Request Hook") {
+  if (isMergeRequestEvent) {
     const mrBody = await c.req.json<MergeRequestHookPayload>();
     try {
       const result = await handleMergeRequestHook(mrBody);

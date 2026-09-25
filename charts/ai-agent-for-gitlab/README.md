@@ -1,6 +1,6 @@
 # ai-agent-for-gitlab
 
-![Version: 0.1.1](https://img.shields.io/badge/Version-0.1.1-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.1](https://img.shields.io/badge/AppVersion-0.1.1-informational?style=flat-square)
+![Version: 0.2.0](https://img.shields.io/badge/Version-0.2.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.1](https://img.shields.io/badge/AppVersion-0.1.1-informational?style=flat-square)
 
 GitLab webhook middleware that triggers AI agent pipelines on @ai mentions and when the AI user is requested as merge request reviewer/assignee.
 
@@ -27,8 +27,23 @@ GitLab webhook middleware that triggers AI agent pipelines on @ai mentions and w
 | extraEnvFrom | list | `[]` | Extra envFrom sources (e.g. a ConfigMap with OPENCODE_AGENT_PROMPT) |
 | fullnameOverride | string | `""` |  |
 | gitlab.aiEmail | string | `""` | Email of the AI service account (used for commits) |
-| gitlab.aiUsername | string | `""` | Username of the AI service account the token belongs to (e.g. ai-reviewer) |
+| gitlab.aiUsername | string | `""` | Username of the AI service account the token belongs to (e.g. review-agent). GitLab reserves usernames starting with ai-, ai_, duo- and duo_. |
 | gitlab.url | string | `"https://gitlab.com"` | GitLab instance URL |
+| gitlabSetup.accessLevel | int | `30` | Role in each group: 30 = Developer, 40 = Maintainer |
+| gitlabSetup.accountType | string | `"service_account"` | "service_account" (instance service account) or "user" (regular user, for GitLab versions without the service account API) |
+| gitlabSetup.avatar | bool | `true` | Upload the bundled bot avatar (files/bot-avatar.png) as the bot's avatar |
+| gitlabSetup.botName | string | `"AI Agent"` | Display name of the bot account |
+| gitlabSetup.enabled | bool | `false` | Enable the automated GitLab setup (requires secrets.gitlabAdminToken) |
+| gitlabSetup.groups | list | `[]` | Full paths of the groups to join; empty = every top-level group |
+| gitlabSetup.resources.limits.memory | string | `"256Mi"` |  |
+| gitlabSetup.resources.requests.cpu | string | `"10m"` |  |
+| gitlabSetup.resources.requests.memory | string | `"64Mi"` |  |
+| gitlabSetup.schedule | string | `"17 * * * *"` | CronJob schedule for re-syncing (new groups, token rotation) |
+| gitlabSetup.systemHook.enabled | bool | `true` | Register the merge request system hook |
+| gitlabSetup.systemHook.sslVerification | bool | `true` | Verify TLS when GitLab calls the hook URL |
+| gitlabSetup.systemHook.url | string | `""` | URL GitLab posts to; empty = this release's in-cluster Service (http://<fullname>.<namespace>.svc.cluster.local:<service.port>/webhook). Use the ingress URL when GitLab runs outside the cluster. |
+| gitlabSetup.token.expiryDays | int | `90` | Lifetime of the bot token in days |
+| gitlabSetup.token.renewBeforeDays | int | `14` | Rotate the bot token this many days before it expires |
 | image.pullPolicy | string | `"IfNotPresent"` |  |
 | image.repository | string | `"m13t/ai-agent-for-gitlab-app"` |  |
 | image.tag | string | `"0.1.1"` | Set to the release version by each release (scripts/pin-release-version.sh). "" falls back to .Chart.AppVersion. |
@@ -74,8 +89,9 @@ GitLab webhook middleware that triggers AI agent pipelines on @ai mentions and w
 | review.prompt | string | `""` | Prompt used for assignment-triggered reviews (empty = built-in default) |
 | secrets.adminToken | string | `""` | Bearer token for /admin endpoints. Generated (and kept across upgrades) when empty. |
 | secrets.existingSecret | string | `""` | Name of an existing Secret; if set, no Secret is created by the chart |
-| secrets.gitlabToken | string | `""` | Token of the AI service account (scopes: api, read_repository, write_repository) |
-| secrets.keys | object | `{"adminToken":"ADMIN_TOKEN","gitlabToken":"GITLAB_TOKEN","webhookSecret":"WEBHOOK_SECRET"}` | Keys inside the existing Secret |
+| secrets.gitlabAdminToken | string | `""` | GitLab administrator token (scopes: api, admin_mode) for gitlabSetup. Only mounted into the setup Job/CronJob, never into the webhook pods. |
+| secrets.gitlabToken | string | `""` | Token of the AI service account (scopes: api, read_repository, write_repository). Not used when gitlabSetup.enabled: the setup job creates and rotates the bot token. |
+| secrets.keys | object | `{"adminToken":"ADMIN_TOKEN","gitlabAdminToken":"GITLAB_ADMIN_TOKEN","gitlabToken":"GITLAB_TOKEN","webhookSecret":"WEBHOOK_SECRET"}` | Keys inside the existing Secret |
 | secrets.webhookSecret | string | `""` | Secret token configured on the GitLab webhook |
 | securityContext.allowPrivilegeEscalation | bool | `false` |  |
 | securityContext.capabilities.drop[0] | string | `"ALL"` |  |

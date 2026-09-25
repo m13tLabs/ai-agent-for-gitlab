@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="./docs/assets/logo.svg" width="128" alt="AI agent for GitLab logo">
+</p>
+
 # `@agent` on Gitlab
 
 ![Comments Showcase](./docs/assets/header.png)
@@ -46,15 +50,18 @@ Add the **Comments** trigger for the webhook. To get reviews on reviewer assignm
 
 ### Merge Request Reviews on Assignment (GitLab Duo alternative)
 
-Create a dedicated GitLab user (or service account / project/group bot), e.g. `ai-reviewer`, and use its token as `GITLAB_TOKEN` and its username as `AI_GITLAB_USERNAME`. The account needs at least *Developer* access to the projects.
+Create a dedicated GitLab user (or service account / project/group bot), e.g. `review-agent`, and use its token as `GITLAB_TOKEN` and its username as `AI_GITLAB_USERNAME`. The account needs at least *Developer* access to the projects. On Kubernetes, the Helm chart can do all of this for you: see [Automated GitLab setup](#automated-gitlab-setup-optional).
+
+> [!NOTE]
+> GitLab reserves usernames starting with `ai-`, `ai_`, `duo-` and `duo_`, so pick a name like `review-agent`.
 
 The webhook app then starts the agent in two ways:
 
 | Trigger | Webhook event | What happens |
 | --- | --- | --- |
 | `@ai <prompt>` in an MR/issue comment | Comments | Agent runs the prompt and replies in the same thread |
-| `ai-reviewer` added as **reviewer** of an MR | Merge request events | Agent reviews the MR and posts a review comment |
-| `ai-reviewer` added as **assignee** of an MR | Merge request events | Same as reviewer (disable with `REVIEW_ON_ASSIGNEE=false`) |
+| `review-agent` added as **reviewer** of an MR | Merge request events | Agent reviews the MR and posts a review comment |
+| `review-agent` added as **assignee** of an MR | Merge request events | Same as reviewer (disable with `REVIEW_ON_ASSIGNEE=false`) |
 
 Details:
 
@@ -167,8 +174,8 @@ The agent itself does not run as a long-lived pod: it runs as a CI job on your G
    ```yaml
    gitlab:
      url: https://gitlab.company.com
-     aiUsername: ai-reviewer
-     aiEmail: ai-reviewer@company.com
+     aiUsername: review-agent
+     aiEmail: review-agent@company.com
 
    secrets:
      existingSecret: ai-agent-secrets
@@ -205,6 +212,33 @@ The agent itself does not run as a long-lived pod: it runs as a CI job on your G
 
 4. Point the GitLab webhook at `https://ai-agent.company.com/webhook` using the `WEBHOOK_SECRET` from step 1.
 
+#### Automated GitLab setup (optional)
+
+<img src="./docs/assets/bot-avatar.svg" width="64" align="right" alt="Bot avatar">
+
+On self-managed GitLab, the chart can configure GitLab itself. Set `gitlabSetup.enabled: true` and give it a GitLab **administrator** token (scopes `api`, `admin_mode`) as `GITLAB_ADMIN_TOKEN` in the Secret (or `secrets.gitlabAdminToken`); `GITLAB_TOKEN` is then not needed. A Job runs on every install/upgrade, and a CronJob (hourly by default) keeps things in sync:
+
+- **Bot account**: creates `gitlab.aiUsername` as a service account (`gitlabSetup.accountType: user` for GitLab versions without the service account API), named `gitlabSetup.botName`, with the bundled bot avatar.
+- **Access everywhere**: adds the bot as *Developer* (`gitlabSetup.accessLevel`) to every top-level group, so subgroups and their projects inherit it. Groups created later are picked up by the CronJob. Limit it with `gitlabSetup.groups`.
+- **System hook**: registers a system hook for merge request events pointing at the release's in-cluster Service. Set `gitlabSetup.systemHook.url` to the ingress URL when GitLab runs outside the cluster. Reviewer/assignee reviews then work on every project without per-project webhooks.
+- **Bot token**: creates the bot's access token (`api` scope, 90 days) and stores it in the Secret `<release>-bot-token`, which the webhook pods use as `GITLAB_TOKEN`. It's rotated 14 days before expiry, and the pods are restarted to load it.
+
+```yaml
+gitlab:
+  url: https://gitlab.company.com
+  aiUsername: review-agent
+  aiEmail: review-agent@company.com
+secrets:
+  existingSecret: ai-agent-secrets   # with GITLAB_ADMIN_TOKEN, WEBHOOK_SECRET, ADMIN_TOKEN
+gitlabSetup:
+  enabled: true
+```
+
+> [!IMPORTANT]
+> System hooks can't send comment events, so `@ai` mentions still need a project or group webhook with **Comments** enabled. The CI jobs also still need `GITLAB_TOKEN` as a CI/CD variable (see [Create Pipeline](#create-pipeline)). The chart doesn't set an instance-wide variable, because every pipeline on the instance could read it.
+>
+> `helm uninstall` leaves the bot account, its group memberships, the system hook and the `<release>-bot-token` Secret in place.
+
 Common chart values:
 
 | Value | Default | Description |
@@ -214,6 +248,8 @@ Common chart values:
 | `gitlab.url`, `gitlab.aiUsername`, `gitlab.aiEmail` | `https://gitlab.com`, –, – | GitLab instance and AI service account (`aiUsername` is required) |
 | `secrets.existingSecret` | `""` | Existing Secret with `GITLAB_TOKEN`, `WEBHOOK_SECRET`, `ADMIN_TOKEN` (key names configurable via `secrets.keys.*`) |
 | `secrets.gitlabToken`, `secrets.webhookSecret`, `secrets.adminToken` | `""` | Used when no existing Secret is given; `adminToken` is generated if empty |
+| `secrets.gitlabAdminToken` | `""` | GitLab admin token for `gitlabSetup` (only mounted into the setup Job/CronJob) |
+| `gitlabSetup.enabled`, `.groups`, `.accessLevel`, `.systemHook.url`, `.schedule` | `false`, `[]`, `30`, in-cluster Service, hourly | [Automated GitLab setup](#automated-gitlab-setup-optional) |
 | `agent.triggerPhrase`, `agent.model`, `agent.prompt` | `@ai`, `azure/gpt-4.1`, `""` | `TRIGGER_PHRASE`, `OPENCODE_MODEL`, `OPENCODE_AGENT_PROMPT` |
 | `review.onAssignment`, `review.onAssignee`, `review.prompt` | `true`, `true`, `""` | Reviewer/assignee triggered reviews |
 | `rateLimiting.enabled`, `.max`, `.window` | `true`, `3`, `900` | Rate limiting; when disabled no Redis is deployed |
