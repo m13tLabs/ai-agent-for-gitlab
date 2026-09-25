@@ -174,3 +174,31 @@ mr_update() { # mr_update <author> <previous reviewers json> <current reviewers 
   run hook "Merge Request Hook" "$(mr_update alice '[]' "[{\"username\":\"$AI_USER\"}]")"
   assert_output "200 disabled"
 }
+
+# System hooks (gitlabSetup) send every event as "System Hook"; payload shapes
+# below match what GitLab 19.4 actually sends.
+@test "system hook: non merge-request events (project_create, ...) are ignored" {
+  run hook "System Hook" '{"event_name":"project_create","project_id":1,"path_with_namespace":"g/p"}'
+  assert_output "200 ignored"
+}
+
+@test "system hook: MR event without a reviewer change is skipped" {
+  run hook "System Hook" "$(mr_update alice "[{\"username\":\"$AI_USER\"}]" "[{\"username\":\"$AI_USER\"}]")"
+  assert_output "200 skipped"
+}
+
+@test "system hook: MR newly requesting the AI user reaches the review handler" {
+  run hook "System Hook" "$(mr_update "$AI_USER" '[]' "[{\"username\":\"$AI_USER\"}]")"
+  assert_output "200 self-trigger"
+}
+
+@test "system hook: wrong secret is rejected" {
+  run hook "System Hook" "$(mr_update alice '[]' "[{\"username\":\"$AI_USER\"}]")" wrong-secret
+  assert_output "401 unauthorized"
+}
+
+@test "gitlab setup entrypoint fails fast without an admin token" {
+  run docker run --rm "$IMAGE" node src/setup.ts
+  [ "$status" -ne 0 ]
+  assert_output_contains "Missing GITLAB_ADMIN_TOKEN"
+}

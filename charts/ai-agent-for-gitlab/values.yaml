@@ -27,7 +27,8 @@ agentImage:
 gitlab:
   # -- GitLab instance URL
   url: https://gitlab.com
-  # -- Username of the AI service account the token belongs to (e.g. ai-reviewer)
+  # -- Username of the AI service account the token belongs to (e.g. review-agent).
+  # GitLab reserves usernames starting with ai-, ai_, duo- and duo_.
   aiUsername: ""
   # -- Email of the AI service account (used for commits)
   aiEmail: ""
@@ -41,12 +42,67 @@ secrets:
     gitlabToken: GITLAB_TOKEN
     webhookSecret: WEBHOOK_SECRET
     adminToken: ADMIN_TOKEN
-  # -- Token of the AI service account (scopes: api, read_repository, write_repository)
+    gitlabAdminToken: GITLAB_ADMIN_TOKEN
+  # -- Token of the AI service account (scopes: api, read_repository, write_repository).
+  # Not used when gitlabSetup.enabled: the setup job creates and rotates the bot token.
   gitlabToken: ""
+  # -- GitLab administrator token (scopes: api, admin_mode) for gitlabSetup. Only
+  # mounted into the setup Job/CronJob, never into the webhook pods.
+  gitlabAdminToken: ""
   # -- Secret token configured on the GitLab webhook
   webhookSecret: ""
   # -- Bearer token for /admin endpoints. Generated (and kept across upgrades) when empty.
   adminToken: ""
+
+# Automated GitLab setup. When enabled, a Job (on every install/upgrade) and a
+# CronJob, both using secrets.gitlabAdminToken:
+#   - create the bot (gitlab.aiUsername) as a service account and set its avatar
+#   - add it with accessLevel to every top-level group (or just `groups`); the
+#     CronJob picks up groups created later
+#   - register a system hook sending merge request events to this release's
+#     Service, so reviewer/assignee requests work on every project
+#   - create the bot's access token and store it in the Secret
+#     <fullname>-bot-token, which the webhook pods read as GITLAB_TOKEN
+#     (secrets.gitlabToken is ignored); rotated before expiry
+# System hooks can't send comment events: @mentions still need a project or
+# group webhook with "Comments" enabled. `helm uninstall` leaves the bot, its
+# memberships, the system hook and the bot-token Secret in place.
+gitlabSetup:
+  # -- Enable the automated GitLab setup (requires secrets.gitlabAdminToken)
+  enabled: false
+  # -- "service_account" (instance service account) or "user" (regular user, for
+  # GitLab versions without the service account API)
+  accountType: service_account
+  # -- Display name of the bot account
+  botName: AI Agent
+  # -- Upload the bundled bot avatar (files/bot-avatar.png) as the bot's avatar
+  avatar: true
+  # -- Role in each group: 30 = Developer, 40 = Maintainer
+  accessLevel: 30
+  # -- Full paths of the groups to join; empty = every top-level group
+  groups: []
+  systemHook:
+    # -- Register the merge request system hook
+    enabled: true
+    # -- URL GitLab posts to; empty = this release's in-cluster Service
+    # (http://<fullname>.<namespace>.svc.cluster.local:<service.port>/webhook).
+    # Use the ingress URL when GitLab runs outside the cluster.
+    url: ""
+    # -- Verify TLS when GitLab calls the hook URL
+    sslVerification: true
+  token:
+    # -- Lifetime of the bot token in days
+    expiryDays: 90
+    # -- Rotate the bot token this many days before it expires
+    renewBeforeDays: 14
+  # -- CronJob schedule for re-syncing (new groups, token rotation)
+  schedule: "17 * * * *"
+  resources:
+    requests:
+      cpu: 10m
+      memory: 64Mi
+    limits:
+      memory: 256Mi
 
 agent:
   # -- Mention that triggers the agent in comments

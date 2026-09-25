@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">AI agent bot avatar</title>
+  <!-- Bot user avatar: the logo's robot face, full-bleed so GitLab's circular
+       avatar crop keeps the face. Rendered to charts/ai-agent-for-gitlab/files/bot-avatar.png
+       (GitLab avatars can't be SVG): see scripts/render-logos.sh. -->
+  <defs>
+    <radialGradient id="bg" cx="0.5" cy="0.35" r="0.75">
+      <stop offset="0" stop-color="#7c3aed"/>
+      <stop offset="1" stop-color="#312e81"/>
+    </radialGradient>
+    <linearGradient id="face" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#e0e7ff"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="512" height="512" fill="url(#bg)"/>
+
+  <!-- antenna -->
+  <line x1="256" y1="110" x2="256" y2="152" stroke="#e0e7ff" stroke-width="14" stroke-linecap="round"/>
+  <circle cx="256" cy="102" r="19" fill="#22d3ee"/>
+
+  <!-- ears -->
+  <rect x="110" y="228" width="34" height="80" rx="17" fill="#c7d2fe"/>
+  <rect x="368" y="228" width="34" height="80" rx="17" fill="#c7d2fe"/>
+
+  <!-- head -->
+  <rect x="134" y="152" width="244" height="232" rx="72" fill="url(#face)"/>
+
+  <!-- eyes -->
+  <circle cx="206" cy="240" r="26" fill="#1e1b4b"/>
+  <circle cx="306" cy="240" r="26" fill="#1e1b4b"/>
+  <circle cx="215" cy="231" r="9" fill="#22d3ee"/>
+  <circle cx="315" cy="231" r="9" fill="#22d3ee"/>
+
+  <!-- mouth: merge-request branch glyph -->
+  <g fill="none" stroke="#4338ca" stroke-width="12" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M206 302 V342"/>
+    <path d="M206 302 C206 328 306 320 306 342"/>
+  </g>
+  <circle cx="206" cy="302" r="13" fill="#7c3aed"/>
+  <circle cx="206" cy="344" r="13" fill="#4338ca"/>
+  <circle cx="306" cy="344" r="13" fill="#22d3ee"/>
+</svg>

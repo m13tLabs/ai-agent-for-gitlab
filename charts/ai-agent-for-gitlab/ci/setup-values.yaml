@@ -1,0 +1,11 @@
+# chart-testing values for the automated GitLab setup path (gitlabSetup.enabled).
+gitlab:
+  url: https://gitlab.example.test
+  aiUsername: review-agent
+  aiEmail: review-agent@example.test
+secrets:
+  gitlabAdminToken: ci-admin-token
+  webhookSecret: ci-webhook-secret
+gitlabSetup:
+  enabled: true
+  groups: [team-a, team-b]

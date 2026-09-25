@@ -53,8 +53,17 @@ spec:
             - name: GITLAB_TOKEN
               valueFrom:
                 secretKeyRef:
+                  {{- if .Values.gitlabSetup.enabled }}
+                  # Created by the gitlabSetup Job after install. Optional so the
+                  # pods (and `helm install --wait`) don't block on it; the Job
+                  # restarts the Deployment once the token is stored.
+                  name: {{ include "ai-agent.botTokenSecretName" . }}
+                  key: GITLAB_TOKEN
+                  optional: true
+                  {{- else }}
                   name: {{ include "ai-agent.secretName" . }}
                   key: {{ .Values.secrets.keys.gitlabToken }}
+                  {{- end }}
             - name: WEBHOOK_SECRET
               valueFrom:
                 secretKeyRef:

@@ -41,7 +41,7 @@ GitLab AI agent: a webhook middleware triggers GitLab CI pipelines that run an o
   `gitlab-app.bats` points `GITLAB_URL` at a closed port, so it only covers paths that answer without GitLab (auth, skip/ignore, self-trigger, disable, MR transition rules). A new response path that calls GitLab needs a GitLab mock instead.
 - Typecheck: `cd gitlab-app && npm ci && npm run typecheck`. Run locally with `npm start` (Node >= 24.2 for `import.meta.main`).
 - Webhook logic without GitLab: import `gitlab-app/src/index.ts` with plain `node` (it only binds a port when run as the entrypoint), set `GITLAB_URL` to a local `node:http` mock and `RATE_LIMITING_ENABLED=false`, then call `app.fetch(new Request(...))` with fake `X-Gitlab-Event` / `X-Gitlab-Token` headers.
-- Chart: `helm lint charts/ai-agent-for-gitlab --set secrets.gitlabToken=x,secrets.webhookSecret=y,gitlab.aiUsername=ai-reviewer`.
+- Chart: `helm lint charts/ai-agent-for-gitlab --set secrets.gitlabToken=x,secrets.webhookSecret=y,gitlab.aiUsername=review-agent`.
 - Real install test: use kind with a **separate kubeconfig**. The user's default kube context is `prod`, so never install there or switch contexts.
 
   ```bash
@@ -53,6 +53,17 @@ GitLab AI agent: a webhook middleware triggers GitLab CI pipelines that run an o
   ```
 
 ## Chart gotchas
+
+- `gitlabSetup.enabled` runs `gitlab-app/src/setup.ts` (same image, `node src/setup.ts`) as a post-install/upgrade hook Job plus a CronJob. It holds the GitLab **admin** token, so it runs in its own pods, never in the internet-facing webhook pod. Every step must stay idempotent because the CronJob re-runs it hourly.
+- Setup facts verified against a real GitLab 19.4 CE (don't "fix" these from memory):
+  - `POST /service_accounts` works on CE. Tokens for service accounts come from `POST /users/:id/personal_access_tokens`; `/service_accounts/:id/personal_access_tokens` returns 404.
+  - Usernames starting with `ai-`, `ai_`, `duo-` or `duo_` are rejected as reserved.
+  - System hooks deliver `X-Gitlab-Event: System Hook` with the MR payload unchanged (`object_kind: merge_request`, same `changes.reviewers`). They *also* always deliver instance events like `project_create`, which the app has to ignore. They can't deliver comment events.
+  - `POST /hooks` defaults `repository_update_events` to true, so setup.ts turns it off explicitly. It finds its hook by `name`, so a URL change updates the hook instead of duplicating it.
+  - Group deletion is delayed; groups with `marked_for_deletion_on` are skipped.
+- The webhook Deployment reads `GITLAB_TOKEN` from `<fullname>-bot-token` with `optional: true`. That Secret is created by the post-install Job, and without `optional` a `helm install --wait` would deadlock. The Job restarts the Deployment (pod-template annotation) after storing or rotating the token.
+- The avatar is uploaded only when its sha256 changes (tracked in a user custom attribute), so the hourly CronJob doesn't pile up uploads.
+- Logo/avatar sources are `docs/assets/{logo,bot-avatar}.svg`. Run `scripts/render-logos.sh` (rsvg-convert) after editing them, because GitLab avatars can't be SVG. The chart ships `files/bot-avatar.png` in a ConfigMap.
 
 - `readOnlyRootFilesystem: true` works only because the pod sets `HOME=/tmp` and mounts an emptyDir at `/tmp`, so anything writing to `$HOME` has a writable place. Keep both if you touch the deployment.
 - `checksum/secret` hashes `.Values.secrets`, not the rendered `secret.yaml`. Rendering the secret calls `randAlphaNum` again, so its hash differs from the stored secret after install and the first no-op upgrade would roll the pods.
