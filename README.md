@@ -82,7 +82,7 @@ Build and publish the image to your registry of choice, or use the prebuilt one 
 
 Then set in your GitLab CI/CD variables:
 
-- `AI_AGENT_IMAGE=ghcr.io/schickli/ai-code-for-gitlab/agent-image:latest`
+- `AI_AGENT_IMAGE=ghcr.io/m13tlabs/ai-agent-for-gitlab-agent:latest`
 
 #### Create Pipeline
 
@@ -117,7 +117,7 @@ You can run the prebuilt image locally:
 Pull the image from the GitHub Container Registry:
 
 ```bash
-docker pull ghcr.io/schickli/ai-code-for-gitlab/gitlab-app:latest
+docker pull ghcr.io/m13tlabs/ai-agent-for-gitlab-app:latest
 ````
 
 > All configuration options can be seen in `.env.example` or the **Configuration** section.

@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [develop]
+  pull_request:
+  merge_group:
+  # allow manual action run
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gitlab-app:
+    uses: m13tLabs/gh-actions-templates/.github/workflows/docker-ci.yml@main
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
+      packages: read
+      attestations: write
+    with:
+      image_name: ai-agent-for-gitlab-app
+      context: gitlab-app
+      dockerhub: true
+      # Boot the server with the minimum config it needs to load, then wait for /health.
+      smoke_test: |
+        docker run -d --name smoke -p 3000:3000 \
+          -e ADMIN_TOKEN=smoke -e RATE_LIMITING_ENABLED=false "$IMAGE"
+        for _ in $(seq 1 30); do
+          curl -fsS http://localhost:3000/health && exit 0
+          sleep 1
+        done
+        docker logs smoke
+        exit 1
+    secrets: inherit
+
+  agent-image:
+    uses: m13tLabs/gh-actions-templates/.github/workflows/docker-ci.yml@main
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
+      packages: read
+      attestations: write
+    with:
+      image_name: ai-agent-for-gitlab-agent
+      context: agent-image
+      dockerhub: true
+      # The image only runs as a GitLab CI job, so check the tools the job relies on.
+      smoke_test: |
+        docker run --rm "$IMAGE" sh -ec '
+          command -v ai-runner
+          opencode --version
+          git --version
+          jq --version
+          test -d /opt/agent/node_modules/@modelcontextprotocol/sdk
+        '
+    secrets: inherit

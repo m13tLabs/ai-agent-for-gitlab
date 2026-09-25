@@ -4,7 +4,7 @@
 replicaCount: 1
 
 image:
-  repository: m13t/ai-agent-for-gitlab/gitlab-app
+  repository: m13t/ai-agent-for-gitlab-app
   tag: ""        # defaults to .Chart.AppVersion when empty
   pullPolicy: IfNotPresent
 
@@ -15,7 +15,7 @@ fullnameOverride: ""
 # -- Image the CI job uses to run the agent (forwarded to pipelines as AI_AGENT_IMAGE).
 # Pipeline variables override the default in .gitlab-ci.yml, so every project uses this image.
 # Leave empty to keep each project's own AI_AGENT_IMAGE.
-agentImage: "m13t/ai-agent-for-gitlab/agent-image:latest"
+agentImage: "m13t/ai-agent-for-gitlab-agent:latest"
 
 gitlab:
   # -- GitLab instance URL

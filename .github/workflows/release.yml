@@ -1,0 +1,50 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: 'Type of release to build: patch, minor, major, or custom'
+        type: choice
+        options: [patch, minor, major, custom]
+        default: patch
+        required: true
+      custom_version:
+        description: "Version to release (only used when release_type is 'custom', e.g. 1.2.3)"
+        type: string
+        required: false
+        default: ''
+      draft_release:
+        description: 'Create the GitHub release as a draft'
+        type: boolean
+        required: false
+        default: true
+
+jobs:
+  # One release, one version, two images: gitlab-app is the main build and
+  # agent-image rides along as the template's "variant" build under its own
+  # image names (no tag suffix).
+  release:
+    uses: m13tLabs/gh-actions-templates/.github/workflows/docker-release.yml@main
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    with:
+      images: '["ghcr.io/m13tlabs/ai-agent-for-gitlab-app","docker.io/m13t/ai-agent-for-gitlab-app"]'
+      context: gitlab-app
+      variant_images: '["ghcr.io/m13tlabs/ai-agent-for-gitlab-agent","docker.io/m13t/ai-agent-for-gitlab-agent"]'
+      variant_context: agent-image
+      variant_dockerfile: Dockerfile
+      variant_suffix: ''
+      # dotnetimages/microsoft-dotnet-core-sdk-nodejs is only published for
+      # linux/amd64, so the agent image can't be built for arm64.
+      variant_platforms: linux/amd64
+      client_id: ${{ vars.CI_CLIENT_ID }}
+      release_type: ${{ inputs.release_type }}
+      custom_version: ${{ inputs.custom_version }}
+      default_branch: ${{ github.ref_name }}
+      draft_release: ${{ inputs.draft_release }}
+      dockerhub: true
+    secrets: inherit

@@ -7,7 +7,7 @@ stages:
 
 variables:
   # Specify the prebuilt agent image containing the runner and tools
-  AI_AGENT_IMAGE: "ghcr.io/schickli/agent-for-gitlab/agent-image:latest"
+  AI_AGENT_IMAGE: "ghcr.io/m13tlabs/ai-agent-for-gitlab-agent:latest"
   
 ai_webhook_handler:
   stage: ai
