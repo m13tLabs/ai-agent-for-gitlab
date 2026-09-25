@@ -38,9 +38,6 @@ jobs:
       variant_context: agent-image
       variant_dockerfile: Dockerfile
       variant_suffix: ''
-      # dotnetimages/microsoft-dotnet-core-sdk-nodejs is only published for
-      # linux/amd64, so the agent image can't be built for arm64.
-      variant_platforms: linux/amd64
       client_id: ${{ vars.CI_CLIENT_ID }}
       release_type: ${{ inputs.release_type }}
       custom_version: ${{ inputs.custom_version }}

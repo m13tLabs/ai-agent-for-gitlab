@@ -32,6 +32,13 @@ in_image() {
   assert_output "$pinned"
 }
 
+@test "runs the Node.js 24 LTS version pinned in the Dockerfile" {
+  pinned="$(sed -n 's/^FROM node:\([0-9.]*\)-.*/\1/p' "$BATS_TEST_DIRNAME/../agent-image/Dockerfile")"
+  [[ "$pinned" == 24.* ]]
+  run --separate-stderr in_image 'node --version'
+  assert_output "v$pinned"
+}
+
 @test "runner dependencies resolve" {
   run in_image 'cd /opt/agent && node --input-type=module -e "
     await import(\"zod\");

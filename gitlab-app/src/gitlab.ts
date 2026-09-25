@@ -1,5 +1,5 @@
 import { Gitlab } from "@gitbeaker/rest";
-import { logger } from "./logger";
+import { logger } from "./logger.ts";
 
 // Initialize GitLab client
 const gitlab = new Gitlab({

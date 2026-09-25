@@ -65,7 +65,7 @@ spec:
                 secretKeyRef:
                   name: {{ include "ai-agent.secretName" . }}
                   key: {{ .Values.secrets.keys.adminToken }}
-            # Bun writes its transpiler cache to $HOME; keep it on the writable tmp volume
+            # Root filesystem is read-only; point $HOME at the writable tmp volume
             - name: HOME
               value: /tmp
             {{- with .Values.extraEnv }}

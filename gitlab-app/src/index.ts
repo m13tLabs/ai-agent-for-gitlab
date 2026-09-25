@@ -1,3 +1,4 @@
+import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { bearerAuth } from "hono/bearer-auth";
 import {
@@ -9,14 +10,14 @@ import {
   addReactionToNote,
   addReactionToMergeRequest,
   getDiscussionThread,
-} from "./gitlab";
-import { limitByUser } from "./limiter";
-import { logger } from "./logger";
+} from "./gitlab.ts";
+import { limitByUser } from "./limiter.ts";
+import { logger } from "./logger.ts";
 import type {
   GitLabUserRef,
   MergeRequestHookPayload,
   WebhookPayload,
-} from "./types";
+} from "./types.ts";
 
 const app = new Hono();
 
@@ -502,7 +503,14 @@ app.post("/webhook", async (c) => {
 });
 
 const port = Number(process.env.PORT) || 3000;
-logger.info(`GitLab AI Webhook Server starting on port ${port}`);
+
+// Serve only when run as the entrypoint (`node src/index.ts`), so tests can
+// import the module and call app.fetch() without binding a port.
+if (import.meta.main) {
+  serve({ fetch: app.fetch, port }, () => {
+    logger.info(`GitLab AI Webhook Server listening on port ${port}`);
+  });
+}
 
 export default {
   port,

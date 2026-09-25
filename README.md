@@ -72,10 +72,9 @@ For that, we use the `agent-image` Docker image. This provides the agent with th
 
 The agent image in `agent-image/` serves as the reusable base for CI jobs that run AI.
 
-- Base image: `dotnetimages/microsoft-dotnet-core-sdk-nodejs:8.0_24.x`
-  - .NET SDK version: 8 (can be changed)
-  - Node.js version: 24.x (can also be changed)
-  - Source and available tags: <https://github.com/DotNet-Docker-Images/dotnet-nodejs-docker>
+- Base image: `mcr.microsoft.com/dotnet/sdk:8.0` (official .NET 8 SDK, can be changed)
+  - Node.js 24 LTS copied in from the official `node:24-bookworm-slim` image (can also be changed)
+  - Published for `linux/amd64` and `linux/arm64`
 - Includes git, curl, jq, opencode CLI, and the modular runner (`ai-runner`).
 
 Build and publish the image to your registry of choice, or use the prebuilt one and reference it in CI via the `AI_AGENT_IMAGE` variable.
