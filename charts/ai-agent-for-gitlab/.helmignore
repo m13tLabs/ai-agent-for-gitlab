@@ -1,8 +1,2 @@
-.DS_Store
-.git/
-*.swp
-*.bak
-*.tmp
-*.orig
-.vscode/
-.idea/
+# chart-testing values (ct lint / ct install), not part of the published chart
+ci/

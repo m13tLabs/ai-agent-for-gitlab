@@ -1,0 +1,7 @@
+# Values chart-testing (`ct lint` / `ct install`) renders the chart with:
+# the minimum the templates `required` to render.
+gitlab:
+  aiUsername: ai-reviewer
+secrets:
+  gitlabToken: ci-gitlab-token
+  webhookSecret: ci-webhook-secret

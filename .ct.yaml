@@ -1,0 +1,6 @@
+chart-dirs:
+  - charts/
+target-branch: develop
+# Chart versions are bumped by the release (scripts/pin-release-version.sh), not per PR.
+check-version-increment: false
+validate-maintainers: false
