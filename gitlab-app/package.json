@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@gitbeaker/rest": "^40.1.1",
+    "@gitbeaker/rest": "^43.0.0",
     "@hono/node-server": "^2.1.1",
     "hono": "^4.8.5",
     "redis": "^4.7.0"
