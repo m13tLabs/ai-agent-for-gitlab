@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ai-agent.fullname" . }}
+  labels:
+    {{- include "ai-agent.labels" . | nindent 4 }}
+data:
+  PORT: "3000"
+  GITLAB_URL: {{ .Values.gitlab.url | quote }}
+  AI_GITLAB_USERNAME: {{ required "gitlab.aiUsername is required" .Values.gitlab.aiUsername | quote }}
+  AI_GITLAB_EMAIL: {{ .Values.gitlab.aiEmail | quote }}
+  AI_AGENT_IMAGE: {{ .Values.agentImage | quote }}
+  TRIGGER_PHRASE: {{ .Values.agent.triggerPhrase | quote }}
+  OPENCODE_MODEL: {{ .Values.agent.model | quote }}
+  {{- with .Values.agent.prompt }}
+  OPENCODE_AGENT_PROMPT: {{ . | quote }}
+  {{- end }}
+  BRANCH_PREFIX: {{ .Values.agent.branchPrefix | quote }}
+  CANCEL_OLD_PIPELINES: {{ .Values.agent.cancelOldPipelines | toString | quote }}
+  START_REACTION_EMOJI: {{ .Values.agent.startReactionEmoji | quote }}
+  REVIEW_ON_ASSIGNMENT: {{ .Values.review.onAssignment | toString | quote }}
+  REVIEW_ON_ASSIGNEE: {{ .Values.review.onAssignee | toString | quote }}
+  {{- with .Values.review.prompt }}
+  REVIEW_PROMPT: {{ . | quote }}
+  {{- end }}
+  RATE_LIMITING_ENABLED: {{ .Values.rateLimiting.enabled | toString | quote }}
+  {{- if .Values.rateLimiting.enabled }}
+  REDIS_URL: {{ required "redis.externalUrl is required when rateLimiting.enabled=true and redis.enabled=false" (include "ai-agent.redisUrl" .) | quote }}
+  RATE_LIMIT_MAX: {{ .Values.rateLimiting.max | toString | quote }}
+  RATE_LIMIT_WINDOW: {{ .Values.rateLimiting.window | toString | quote }}
+  {{- end }}
+  LOG_LEVEL: {{ .Values.logging.level | quote }}
+  LOG_FORMAT: {{ .Values.logging.format | quote }}

@@ -7,13 +7,182 @@ import {
   createBranch,
   sanitizeBranchName,
   addReactionToNote,
+  addReactionToMergeRequest,
   getDiscussionThread,
 } from "./gitlab";
 import { limitByUser } from "./limiter";
 import { logger } from "./logger";
-import type { WebhookPayload } from "./types";
+import type {
+  GitLabUserRef,
+  MergeRequestHookPayload,
+  WebhookPayload,
+} from "./types";
 
 const app = new Hono();
+
+// Enforce size limit for CI variable safety
+const MAX_PROMPT_CHARS = 8000;
+
+const DEFAULT_REVIEW_PROMPT =
+  "You have been requested to review this merge request. Use the context tool to read the MR and its diff against the target branch. " +
+  "Post a single review comment covering correctness bugs, security issues, missing tests and notable maintainability concerns, " +
+  "each with file/line references and a concrete suggestion. Do not commit or push any changes unless explicitly asked.";
+
+// Variables shared by every AI pipeline, independent of the trigger type
+function commonPipelineVariables(triggerPhrase: string): Record<string, string> {
+  const variables: Record<string, string> = {
+    AI_TRIGGER: "true",
+    AI_GITLAB_EMAIL: process.env.AI_GITLAB_EMAIL || "",
+    AI_GITLAB_USERNAME: process.env.AI_GITLAB_USERNAME || "",
+    OPENCODE_MODEL: process.env.OPENCODE_MODEL || "azure/gpt-4.1",
+    OPENCODE_AGENT_PROMPT: process.env.OPENCODE_AGENT_PROMPT || "",
+    TRIGGER_PHRASE: triggerPhrase,
+  };
+
+  // Pipeline variables take precedence over .gitlab-ci.yml, so this pins the agent image centrally
+  if (process.env.AI_AGENT_IMAGE) {
+    variables.AI_AGENT_IMAGE = process.env.AI_AGENT_IMAGE;
+  }
+
+  return variables;
+}
+
+function truncatePrompt(prompt: string): string {
+  if (prompt.length <= MAX_PROMPT_CHARS) return prompt;
+  logger.warn("Aggregated prompt truncated", {
+    original: prompt.length,
+    max: MAX_PROMPT_CHARS,
+  });
+  return prompt.slice(0, MAX_PROMPT_CHARS) + "\n...[truncated]";
+}
+
+function includesUser(users: GitLabUserRef[] | undefined, username: string) {
+  return !!users?.some((u) => u.username === username);
+}
+
+// True if the AI user was newly requested as reviewer/assignee by this event
+function aiUserNewlyRequested(
+  body: MergeRequestHookPayload,
+  aiUsername: string
+): boolean {
+  const action = body.object_attributes?.action;
+  const watchAssignees = process.env.REVIEW_ON_ASSIGNEE !== "false";
+
+  if (action === "open" || action === "reopen") {
+    return (
+      includesUser(body.reviewers, aiUsername) ||
+      (watchAssignees && includesUser(body.assignees, aiUsername))
+    );
+  }
+
+  if (action !== "update") return false;
+
+  const added = (change?: {
+    previous?: GitLabUserRef[];
+    current?: GitLabUserRef[];
+  }) =>
+    !!change &&
+    includesUser(change.current, aiUsername) &&
+    !includesUser(change.previous, aiUsername);
+
+  return (
+    added(body.changes?.reviewers) ||
+    (watchAssignees && added(body.changes?.assignees))
+  );
+}
+
+async function handleMergeRequestHook(body: MergeRequestHookPayload) {
+  const aiUsername = process.env.AI_GITLAB_USERNAME;
+  const mr = body.object_attributes;
+  const projectId = body.project?.id;
+  const authorUsername = body.user?.username;
+
+  if (process.env.REVIEW_ON_ASSIGNMENT === "false") {
+    return { status: 200, body: "review-on-assignment-disabled" };
+  }
+
+  if (!aiUsername) {
+    logger.warn("AI_GITLAB_USERNAME not set, cannot detect reviewer assignment");
+    return { status: 200, body: "skipped" };
+  }
+
+  if (!mr || mr.state !== "opened" || !aiUserNewlyRequested(body, aiUsername)) {
+    logger.debug("AI user not newly requested on merge request", {
+      action: mr?.action,
+      mrIid: mr?.iid,
+    });
+    return { status: 200, body: "skipped" };
+  }
+
+  if (process.env.AI_DISABLED === "true") {
+    logger.warn("Bot is disabled, skipping review trigger");
+    return { status: 200, body: "disabled" };
+  }
+
+  if (authorUsername === aiUsername) {
+    logger.warn("Ignoring self-assigned review");
+    return { status: 200, body: "self-trigger" };
+  }
+
+  const key = `${authorUsername}:${projectId}:${mr.iid}`;
+  if (!(await limitByUser(key))) {
+    logger.warn("Rate limit exceeded", { key, author: authorUsername });
+    return { status: 200, body: "rate-limited" };
+  }
+
+  const triggerPhrase = process.env.TRIGGER_PHRASE || "@ai";
+  const reviewPrompt = process.env.REVIEW_PROMPT || DEFAULT_REVIEW_PROMPT;
+  const prompt = truncatePrompt(
+    `${reviewPrompt}\n\n=== Merge Request !${mr.iid}: ${mr.title} ===\n` +
+      `Source: ${mr.source_branch} -> Target: ${mr.target_branch}\n\n${
+        mr.description || ""
+      }`.trim()
+  );
+
+  const minimalPayload = {
+    object_kind: body.object_kind,
+    project: body.project,
+    user: body.user,
+    merge_request: { iid: mr.iid, title: mr.title, state: mr.state },
+  };
+
+  const variables = {
+    ...commonPipelineVariables(triggerPhrase),
+    AI_AUTHOR: authorUsername,
+    AI_RESOURCE_TYPE: "merge_request",
+    AI_RESOURCE_ID: String(mr.iid),
+    AI_PROJECT_PATH: body.project.path_with_namespace,
+    AI_BRANCH: mr.source_branch,
+    AI_DISCUSSION_ID: "",
+    AI_REVIEW: "true",
+    DIRECT_PROMPT: prompt,
+    GITLAB_WEBHOOK_PAYLOAD: JSON.stringify(minimalPayload),
+  };
+
+  logger.info("Review requested from AI user", {
+    project: body.project.path_with_namespace,
+    mrIid: mr.iid,
+    requestedBy: authorUsername,
+  });
+
+  const pipelineId = await triggerPipeline(
+    projectId,
+    mr.source_branch,
+    variables,
+    mr.iid
+  );
+
+  await addReactionToMergeRequest({ projectId, mrIid: mr.iid });
+
+  if (process.env.CANCEL_OLD_PIPELINES === "true") {
+    await cancelOldPipelines(projectId, pipelineId, mr.source_branch);
+  }
+
+  return {
+    status: 200,
+    body: { status: "started", pipelineId, branch: mr.source_branch },
+  };
+}
 
 // Log all requests
 app.use("*", async (c, next) => {
@@ -79,7 +248,25 @@ app.post("/webhook", async (c) => {
     return c.text("unauthorized", 401);
   }
 
-  // Only handle Note Hook events
+  // Merge request events trigger a review when the AI user is requested as reviewer/assignee
+  if (gitlabEvent === "Merge Request Hook") {
+    const mrBody = await c.req.json<MergeRequestHookPayload>();
+    try {
+      const result = await handleMergeRequestHook(mrBody);
+      return typeof result.body === "string"
+        ? c.text(result.body, result.status as 200)
+        : c.json(result.body, result.status as 200);
+    } catch (error) {
+      logger.error("Failed to trigger review pipeline", {
+        error: error instanceof Error ? error.message : error,
+        projectId: mrBody.project?.id,
+        mrIid: mrBody.object_attributes?.iid,
+      });
+      return c.json({ error: "Failed to trigger pipeline" }, 500);
+    }
+  }
+
+  // Otherwise only handle Note Hook events
   if (gitlabEvent !== "Note Hook") {
     logger.debug("Ignoring non-Note Hook event", { event: gitlabEvent });
     return c.text("ignored");
@@ -226,16 +413,7 @@ app.post("/webhook", async (c) => {
     }
   }
 
-  // Enforce size limit for CI variable safety
-  const MAX_PROMPT_CHARS = 8000;
-  if (aggregatedPrompt.length > MAX_PROMPT_CHARS) {
-    logger.warn("Aggregated prompt truncated", {
-      original: aggregatedPrompt.length,
-      max: MAX_PROMPT_CHARS,
-    });
-    aggregatedPrompt =
-      aggregatedPrompt.slice(0, MAX_PROMPT_CHARS) + "\n...[truncated]";
-  }
+  aggregatedPrompt = truncatePrompt(aggregatedPrompt);
 
   // Create minimal webhook payload for CI/CD variable (10KB limit)
   const minimalPayload = {
@@ -266,18 +444,13 @@ app.post("/webhook", async (c) => {
 
   // Trigger pipeline with variables
   const variables = {
-    AI_TRIGGER: "true",
+    ...commonPipelineVariables(triggerPhrase),
     AI_AUTHOR: authorUsername,
-    AI_GITLAB_EMAIL: process.env.AI_GITLAB_EMAIL || "",
-    AI_GITLAB_USERNAME: process.env.AI_GITLAB_USERNAME || "",
     AI_RESOURCE_TYPE: mrIid ? "merge_request" : "issue",
     AI_RESOURCE_ID: String(mrIid || issueIid || ""),
     AI_PROJECT_PATH: projectPath,
     AI_BRANCH: ref,
     AI_DISCUSSION_ID: discussionId,
-    OPENCODE_MODEL: process.env.OPENCODE_MODEL || "azure/gpt-4.1",
-    OPENCODE_AGENT_PROMPT: process.env.OPENCODE_AGENT_PROMPT || "",
-    TRIGGER_PHRASE: triggerPhrase,
     DIRECT_PROMPT: aggregatedPrompt,
     GITLAB_WEBHOOK_PAYLOAD: JSON.stringify(minimalPayload),
   };

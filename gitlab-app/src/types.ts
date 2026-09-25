@@ -107,3 +107,35 @@ export interface WebhookPayload {
     visibility: string;
   };
 }
+
+export interface GitLabUserRef {
+  id: number;
+  username: string;
+  name?: string;
+}
+
+// Subset of the "Merge Request Hook" payload used for reviewer/assignee triggers
+export interface MergeRequestHookPayload {
+  object_kind: "merge_request";
+  event_type?: string;
+  user: GitLabUserRef;
+  project: WebhookPayload["project"];
+  object_attributes: {
+    id: number;
+    iid: number;
+    title: string;
+    description?: string;
+    source_branch: string;
+    target_branch: string;
+    state: string;
+    action?: string;
+    draft?: boolean;
+    url?: string;
+  };
+  assignees?: GitLabUserRef[];
+  reviewers?: GitLabUserRef[];
+  changes?: {
+    assignees?: { previous?: GitLabUserRef[]; current?: GitLabUserRef[] };
+    reviewers?: { previous?: GitLabUserRef[]; current?: GitLabUserRef[] };
+  };
+}

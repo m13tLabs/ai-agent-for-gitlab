@@ -445,3 +445,49 @@ export async function getDiscussionThread(params: {
     return [];
   }
 }
+
+// Award an emoji on the merge request itself (used when a review is triggered by assignment)
+export async function addReactionToMergeRequest(params: {
+  projectId: number;
+  mrIid: number;
+  emoji?: string;
+}): Promise<void> {
+  const { projectId, mrIid } = params;
+  const emoji = params.emoji || process.env.START_REACTION_EMOJI || "robot";
+
+  try {
+    const gitlabUrl = process.env.GITLAB_URL || "https://gitlab.com";
+    const token = process.env.GITLAB_TOKEN!;
+
+    const res = await fetch(
+      `${gitlabUrl}/api/v4/projects/${projectId}/merge_requests/${mrIid}/award_emoji`,
+      {
+        method: "POST",
+        headers: {
+          "PRIVATE-TOKEN": token,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ name: emoji }),
+      }
+    );
+
+    if (!res.ok) {
+      // 404 "already awarded" and similar are non-critical
+      logger.warn("Failed to add reaction to merge request", {
+        projectId,
+        mrIid,
+        status: res.status,
+        body: await res.text(),
+      });
+      return;
+    }
+
+    logger.info("Reaction added to merge request", { projectId, mrIid, emoji });
+  } catch (error) {
+    logger.warn("Error adding reaction to merge request", {
+      error: error instanceof Error ? error.message : error,
+      projectId,
+      mrIid,
+    });
+  }
+}

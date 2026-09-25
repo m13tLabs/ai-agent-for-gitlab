@@ -1,0 +1,157 @@
+# -- Number of webhook middleware replicas.
+# Note: /admin/disable and /admin/enable only affect the pod that serves the request,
+# so keep this at 1 if you rely on the admin endpoints.
+replicaCount: 1
+
+image:
+  repository: m13t/ai-agent-for-gitlab/gitlab-app
+  tag: ""        # defaults to .Chart.AppVersion when empty
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# -- Image the CI job uses to run the agent (forwarded to pipelines as AI_AGENT_IMAGE).
+# Pipeline variables override the default in .gitlab-ci.yml, so every project uses this image.
+# Leave empty to keep each project's own AI_AGENT_IMAGE.
+agentImage: "m13t/ai-agent-for-gitlab/agent-image:latest"
+
+gitlab:
+  # -- GitLab instance URL
+  url: https://gitlab.com
+  # -- Username of the AI service account the token belongs to (e.g. ai-reviewer)
+  aiUsername: ""
+  # -- Email of the AI service account (used for commits)
+  aiEmail: ""
+
+# Secrets. Either set the values here or reference an existing Secret.
+secrets:
+  # -- Name of an existing Secret; if set, no Secret is created by the chart
+  existingSecret: ""
+  # -- Keys inside the existing Secret
+  keys:
+    gitlabToken: GITLAB_TOKEN
+    webhookSecret: WEBHOOK_SECRET
+    adminToken: ADMIN_TOKEN
+  # -- Token of the AI service account (scopes: api, read_repository, write_repository)
+  gitlabToken: ""
+  # -- Secret token configured on the GitLab webhook
+  webhookSecret: ""
+  # -- Bearer token for /admin endpoints. Generated (and kept across upgrades) when empty.
+  adminToken: ""
+
+agent:
+  # -- Mention that triggers the agent in comments
+  triggerPhrase: "@ai"
+  # -- opencode model in provider/model form
+  model: azure/gpt-4.1
+  # -- Base prompt for the agent (OPENCODE_AGENT_PROMPT)
+  prompt: ""
+  # -- Prefix for branches created for issues
+  branchPrefix: ai
+  # -- Cancel older pending pipelines on the same ref
+  cancelOldPipelines: true
+  # -- Emoji awarded when a run starts
+  startReactionEmoji: robot
+
+review:
+  # -- Start a review when the AI user is added as reviewer on a merge request
+  #    (requires the "Merge request events" trigger on the webhook)
+  onAssignment: true
+  # -- Also start a review when the AI user is added as assignee
+  onAssignee: true
+  # -- Prompt used for assignment-triggered reviews (empty = built-in default)
+  prompt: ""
+
+rateLimiting:
+  enabled: true
+  # -- Max triggers per user/project/resource within the window
+  max: 3
+  # -- Window in seconds
+  window: 900
+
+# Bundled single-instance Redis for rate limiting.
+# Ignored when rateLimiting.enabled is false.
+redis:
+  enabled: true
+  # -- Redis URL to use when redis.enabled is false (e.g. a managed Redis)
+  externalUrl: ""
+  image:
+    repository: redis
+    tag: 7-alpine
+    pullPolicy: IfNotPresent
+  persistence:
+    enabled: false
+    size: 1Gi
+    storageClass: ""
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      memory: 128Mi
+
+logging:
+  level: info     # debug | info | warn | error
+  format: json    # json | pretty
+
+# -- Extra environment variables for the middleware container
+extraEnv: []
+# - name: FOO
+#   value: bar
+
+# -- Extra envFrom sources (e.g. a ConfigMap with OPENCODE_AGENT_PROMPT)
+extraEnvFrom: []
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1001
+  runAsGroup: 1001
+  fsGroup: 1001
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+service:
+  type: ClusterIP
+  port: 80
+
+# GitLab must be able to reach POST /webhook on this host.
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  # cert-manager.io/cluster-issuer: letsencrypt
+  hosts:
+    - host: ai-agent.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  # - secretName: ai-agent-tls
+  #   hosts: [ai-agent.example.com]
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    memory: 256Mi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

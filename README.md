@@ -6,11 +6,15 @@ This is a system that allows you to trigger an agent with the command @agent, wh
 The agent runs securely in your pipeline runner.
 
 > This project was forked from [RealMikeChong](https://github.com/RealMikeChong/claude-code-for-gitlab). I used his gitlab webhook app and refactored the runner, added more documentation and added MCP & Opencode Support...
+>
+> This fork is based on [Schickli/ai-code-for-gitlab](https://github.com/Schickli/ai-code-for-gitlab) and adds merge request reviews on reviewer assignment (no GitLab Duo required) and a Helm chart for Kubernetes.
 
 ## Features
 
 - Single webhook endpoint for all projects
 - Triggers pipelines when `@ai` is mentioned in comments (or your custom @)
+- Reviews merge requests when the AI service account is added as **reviewer** (or assignee) — a GitLab Duo Code Review alternative
+- Helm chart for Kubernetes deployments
 - Updates comment with progress (emoji reaction)
 - Configurable rate limiting (or no rl at all)
 - Works with personal access tokens (no OAuth required)
@@ -35,7 +39,29 @@ Enter `https://your-server.com/webhook` as the URL (replace `your-server.com` wi
 
 Set a secret token for the webhook (you will need to set this in your GitLab Webhook App).  
 
-Add the **Comments** trigger for the webhook.
+Add the **Comments** trigger for the webhook. To get reviews on reviewer assignment, also add the **Merge request events** trigger.
+
+> [!TIP]
+> Instead of configuring the webhook per project, you can add it once as a **group webhook** (Premium) or a **system hook** (self-managed admin) so all projects are covered.
+
+### Merge Request Reviews on Assignment (GitLab Duo alternative)
+
+Create a dedicated GitLab user (or service account / project/group bot), e.g. `ai-reviewer`, and use its token as `GITLAB_TOKEN` and its username as `AI_GITLAB_USERNAME`. The account needs at least *Developer* access to the projects.
+
+The webhook app then starts the agent in two ways:
+
+| Trigger | Webhook event | What happens |
+| --- | --- | --- |
+| `@ai <prompt>` in an MR/issue comment | Comments | Agent runs the prompt and replies in the same thread |
+| `ai-reviewer` added as **reviewer** of an MR | Merge request events | Agent reviews the MR and posts a review comment |
+| `ai-reviewer` added as **assignee** of an MR | Merge request events | Same as reviewer (disable with `REVIEW_ON_ASSIGNEE=false`) |
+
+Details:
+
+- A review is only triggered when the AI user is **newly** added (on MR open/reopen or when reviewers/assignees change), so later pushes or title edits do not re-trigger it. Remove and re-add the reviewer to request another review.
+- Only open MRs are reviewed; the bot ignores assignments it made itself; the rate limit applies per user/project/MR.
+- The pipeline gets `AI_REVIEW=true`, so you can branch on it in `.gitlab-ci.yml` (e.g. a different `CUSTOM_AGENT_PROMPT`).
+- The review instructions come from `REVIEW_PROMPT` (a sensible default is built in), combined with `OPENCODE_AGENT_PROMPT` and `CUSTOM_AGENT_PROMPT` as usual.
 
 ### GitLab Pipeline
 
@@ -121,6 +147,84 @@ Run the following steps in the `gitlab-app` directory:
    docker-compose -f docker-compose.yml up -d
    ```
 
+#### Using Kubernetes (Helm)
+
+The chart in [`charts/ai-agent-for-gitlab`](./charts/ai-agent-for-gitlab) deploys the webhook app, optionally a small Redis for rate limiting, and an Ingress so GitLab can reach `/webhook`.
+
+The agent itself does not run as a long-lived pod: it runs as a CI job on your GitLab runners (use the [GitLab Runner Kubernetes executor](https://docs.gitlab.com/runner/executors/kubernetes/) to run those jobs in the same cluster). The chart's `agentImage` value is forwarded to every triggered pipeline as `AI_AGENT_IMAGE`, so you can pin the agent image version for all projects in one place.
+
+1. Create the secret (recommended over putting tokens in values):
+
+   ```bash
+   kubectl create namespace ai-agent
+   kubectl -n ai-agent create secret generic ai-agent-secrets \
+     --from-literal=GITLAB_TOKEN=glpat-xxxxxxxxxxxxxxxxxxxx \
+     --from-literal=WEBHOOK_SECRET=$(openssl rand -hex 24) \
+     --from-literal=ADMIN_TOKEN=$(openssl rand -hex 24)
+   ```
+
+2. Create a `values.yaml`:
+
+   ```yaml
+   gitlab:
+     url: https://gitlab.company.com
+     aiUsername: ai-reviewer
+     aiEmail: ai-reviewer@company.com
+
+   secrets:
+     existingSecret: ai-agent-secrets
+
+   agentImage: m13t/ai-agent-for-gitlab/agent-image:latest
+
+   agent:
+     model: anthropic/claude-sonnet-5
+     prompt: |
+       You are an assistant that fixes bugs and implements features ...
+
+   ingress:
+     enabled: true
+     className: nginx
+     annotations:
+       cert-manager.io/cluster-issuer: letsencrypt
+     hosts:
+       - host: ai-agent.company.com
+         paths:
+           - path: /
+             pathType: Prefix
+     tls:
+       - secretName: ai-agent-tls
+         hosts: [ai-agent.company.com]
+   ```
+
+3. Install:
+
+   ```bash
+   helm upgrade --install ai-agent ./charts/ai-agent-for-gitlab -n ai-agent -f values.yaml
+   ```
+
+4. Point the GitLab webhook at `https://ai-agent.company.com/webhook` using the `WEBHOOK_SECRET` from step 1.
+
+Common chart values:
+
+| Value | Default | Description |
+| --- | --- | --- |
+| `image.repository` / `image.tag` | `m13t/ai-agent-for-gitlab/gitlab-app` / appVersion | Webhook app image |
+| `agentImage` | `m13t/ai-agent-for-gitlab/agent-image:latest` | Forwarded as `AI_AGENT_IMAGE`; empty keeps each project's own |
+| `gitlab.url`, `gitlab.aiUsername`, `gitlab.aiEmail` | `https://gitlab.com`, –, – | GitLab instance and AI service account (`aiUsername` is required) |
+| `secrets.existingSecret` | `""` | Existing Secret with `GITLAB_TOKEN`, `WEBHOOK_SECRET`, `ADMIN_TOKEN` (key names configurable via `secrets.keys.*`) |
+| `secrets.gitlabToken`, `secrets.webhookSecret`, `secrets.adminToken` | `""` | Used when no existing Secret is given; `adminToken` is generated if empty |
+| `agent.triggerPhrase`, `agent.model`, `agent.prompt` | `@ai`, `azure/gpt-4.1`, `""` | `TRIGGER_PHRASE`, `OPENCODE_MODEL`, `OPENCODE_AGENT_PROMPT` |
+| `review.onAssignment`, `review.onAssignee`, `review.prompt` | `true`, `true`, `""` | Reviewer/assignee triggered reviews |
+| `rateLimiting.enabled`, `.max`, `.window` | `true`, `3`, `900` | Rate limiting; when disabled no Redis is deployed |
+| `redis.enabled`, `redis.externalUrl`, `redis.persistence.enabled` | `true`, `""`, `false` | Bundled Redis, or set `enabled: false` + `externalUrl` for a managed one |
+| `ingress.*` | disabled | Standard Ingress settings |
+| `extraEnv`, `extraEnvFrom` | `[]` | Any further environment variables for the webhook app |
+
+See [`values.yaml`](./charts/ai-agent-for-gitlab/values.yaml) for all options.
+
+> [!NOTE]
+> `/admin/disable` and `/admin/enable` only switch the pod that serves the request. Keep `replicaCount: 1` (the default) if you rely on them.
+
 ## Configurations
 
 ### Environment Variables for the GitLab Webhook App (in `.env` or Docker build args)
@@ -139,6 +243,11 @@ Run the following steps in the `gitlab-app` directory:
 - `TRIGGER_PHRASE`: Custom trigger phrase instead of `@ai` (default: `@ai`)
 - `BRANCH_PREFIX`: Prefix for branches created by AI (default: `ai`)
 - `OPENCODE_MODEL`: The model used by opencode in `provider/model` (for azure its the deployment name) form (e.g., `azure/gpt-4.1`)
+- `AI_AGENT_IMAGE`: Optional agent image forwarded to every triggered pipeline (overrides the value in `.gitlab-ci.yml`)
+- `REVIEW_ON_ASSIGNMENT`: Review MRs when `AI_GITLAB_USERNAME` is added as reviewer (default: true, needs the *Merge request events* webhook trigger)
+- `REVIEW_ON_ASSIGNEE`: Also review when the AI user is added as assignee (default: true)
+- `REVIEW_PROMPT`: Custom instructions for assignment-triggered reviews (default: built-in review prompt)
+- `START_REACTION_EMOJI`: Emoji awarded when a run starts (default: `robot`)
   
 - `RATE_LIMITING_ENABLED`: Enable/disable rate limiting (default: true). If set to `false`, Redis is not used and not required.
 - `REDIS_URL`: Redis connection URL
@@ -151,6 +260,7 @@ When a pipeline is triggered, these variables are available:
 
 - `AI_AGENT_IMAGE`: The Docker image for the AI agent
 - `CUSTOM_AGENT_PROMPT`: Repository-specific additions to the agent prompt. If set, it is appended to the base prompt defined in the webhook app.
+- `AI_REVIEW`: Set to `true` when the run was triggered by a reviewer/assignee assignment instead of a comment.
 
 ### GitLab CI/CD Variables (Keys)
 
@@ -203,5 +313,7 @@ This ensures that:
 - [ ] Add a new tool to get the Jira ticket description and comments (So that the agent can see the full ticket)
 - [ ] Provide configuration for the MCP Servers (So that other MCP Servers can be added more easily)
 - [ ] Add the Sonar MCP Server
+- [x] Trigger a review when the AI user is requested as MR reviewer/assignee
+- [x] Helm chart for Kubernetes deployments
 - [ ] Evaluate the change to listen on mentioned events instead of all comments
 - [ ] Add cost to the comment (So that the user knows how much it costed)

@@ -1,0 +1,21 @@
+The AI agent webhook middleware is deployed.
+
+1. Point a GitLab webhook (project, group, or system hook) at:
+{{- if .Values.ingress.enabled }}
+{{- range .Values.ingress.hosts }}
+     http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}/webhook
+{{- end }}
+{{- else }}
+     (no ingress enabled) kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "ai-agent.fullname" . }} 3000:{{ .Values.service.port }}
+     and expose it, e.g. via your own ingress/gateway, at https://<host>/webhook
+{{- end }}
+   Secret token: the value of WEBHOOK_SECRET in secret "{{ include "ai-agent.secretName" . }}".
+   Triggers: "Comments"{{ if .Values.review.onAssignment }} and "Merge request events"{{ end }}.
+
+2. Mention {{ .Values.agent.triggerPhrase }} in an MR/issue comment{{ if .Values.review.onAssignment }}, or add
+   @{{ .Values.gitlab.aiUsername }} as reviewer{{ if .Values.review.onAssignee }}/assignee{{ end }} on a merge request{{ end }}.
+
+3. Pipelines run the agent image: {{ default "(each project's AI_AGENT_IMAGE)" .Values.agentImage }}
+
+Admin token:
+  kubectl -n {{ .Release.Namespace }} get secret {{ include "ai-agent.secretName" . }} -o jsonpath='{.data.{{ .Values.secrets.keys.adminToken }}}' | base64 -d
