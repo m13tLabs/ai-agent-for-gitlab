@@ -24,16 +24,8 @@ jobs:
       image_name: ai-agent-for-gitlab-app
       context: gitlab-app
       dockerhub: true
-      # Boot the server with the minimum config it needs to load, then wait for /health.
-      smoke_test: |
-        docker run -d --name smoke -p 3000:3000 \
-          -e ADMIN_TOKEN=smoke -e RATE_LIMITING_ENABLED=false "$IMAGE"
-        for _ in $(seq 1 30); do
-          curl -fsS http://localhost:3000/health && exit 0
-          sleep 1
-        done
-        docker logs smoke
-        exit 1
+      # BATS suite against the freshly built image, see test/gitlab-app.bats.
+      smoke_test: npx --yes bats@1.13.0 test/gitlab-app.bats
     secrets: inherit
 
   agent-image:
@@ -48,13 +40,28 @@ jobs:
       image_name: ai-agent-for-gitlab-agent
       context: agent-image
       dockerhub: true
-      # The image only runs as a GitLab CI job, so check the tools the job relies on.
-      smoke_test: |
-        docker run --rm "$IMAGE" sh -ec '
-          command -v ai-runner
-          opencode --version
-          git --version
-          jq --version
-          test -d /opt/agent/node_modules/@modelcontextprotocol/sdk
-        '
+      # BATS suite against the freshly built image, see test/agent-image.bats.
+      smoke_test: npx --yes bats@1.13.0 test/agent-image.bats
     secrets: inherit
+
+  # Single required status check for branch protection: fails unless every
+  # job above succeeded (a skipped or cancelled job counts as a failure too).
+  build-result:
+    name: Build Result
+    if: always()
+    runs-on: ubuntu-latest
+    needs: [gitlab-app, agent-image]
+    steps:
+      - name: Check job results
+        # see https://stackoverflow.com/a/67532120/4907315
+        if: >-
+          ${{
+            contains(needs.*.result, 'failure')
+            || contains(needs.*.result, 'cancelled')
+            || contains(needs.*.result, 'skipped')
+          }}
+        env:
+          NEEDS: ${{ toJson(needs) }}
+        run: |
+          echo "One or more jobs did not succeed: $NEEDS" >&2
+          exit 1
