@@ -50,6 +50,20 @@ app.kubernetes.io/component: redis
 {{- default (include "ai-agent.fullname" .) .Values.secrets.existingSecret }}
 {{- end }}
 
+{{/*
+Agent image forwarded as AI_AGENT_IMAGE: "<repository>:<tag>", or "" when
+repository is empty. A plain string (the pre-split form of agentImage) is
+passed through unchanged.
+*/}}
+{{- define "ai-agent.agentImage" -}}
+{{- $img := .Values.agentImage }}
+{{- if kindIs "string" $img }}
+{{- $img }}
+{{- else if $img.repository }}
+{{- printf "%s:%s" $img.repository ($img.tag | default .Chart.AppVersion) }}
+{{- end }}
+{{- end }}
+
 {{- define "ai-agent.redisEnabled" -}}
 {{- if and .Values.rateLimiting.enabled .Values.redis.enabled }}true{{- end }}
 {{- end }}

@@ -5,17 +5,24 @@ replicaCount: 1
 
 image:
   repository: m13t/ai-agent-for-gitlab-app
-  tag: ""        # defaults to .Chart.AppVersion when empty
+  # -- Set to the release version by each release (scripts/pin-release-version.sh).
+  # "" falls back to .Chart.AppVersion.
+  tag: "0.1.0"
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
 
-# -- Image the CI job uses to run the agent (forwarded to pipelines as AI_AGENT_IMAGE).
-# Pipeline variables override the default in .gitlab-ci.yml, so every project uses this image.
-# Leave empty to keep each project's own AI_AGENT_IMAGE.
-agentImage: "m13t/ai-agent-for-gitlab-agent:latest"
+# -- Image the CI job uses to run the agent, forwarded to pipelines as
+# AI_AGENT_IMAGE=<repository>:<tag>. Pipeline variables override the default in
+# .gitlab-ci.yml, so every project uses this image.
+# Set repository to "" to keep each project's own AI_AGENT_IMAGE.
+agentImage:
+  repository: m13t/ai-agent-for-gitlab-agent
+  # -- Set to the release version by each release (scripts/pin-release-version.sh).
+  # "" falls back to .Chart.AppVersion.
+  tag: "0.1.0"
 
 gitlab:
   # -- GitLab instance URL

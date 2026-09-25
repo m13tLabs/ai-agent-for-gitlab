@@ -15,7 +15,7 @@ The AI agent webhook middleware is deployed.
 2. Mention {{ .Values.agent.triggerPhrase }} in an MR/issue comment{{ if .Values.review.onAssignment }}, or add
    @{{ .Values.gitlab.aiUsername }} as reviewer{{ if .Values.review.onAssignee }}/assignee{{ end }} on a merge request{{ end }}.
 
-3. Pipelines run the agent image: {{ default "(each project's AI_AGENT_IMAGE)" .Values.agentImage }}
+3. Pipelines run the agent image: {{ default "(each project's AI_AGENT_IMAGE)" (include "ai-agent.agentImage" .) }}
 
 Admin token:
   kubectl -n {{ .Release.Namespace }} get secret {{ include "ai-agent.secretName" . }} -o jsonpath='{.data.{{ .Values.secrets.keys.adminToken }}}' | base64 -d

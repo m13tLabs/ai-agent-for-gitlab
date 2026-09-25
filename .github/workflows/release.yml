@@ -47,4 +47,7 @@ jobs:
       default_branch: ${{ github.ref_name }}
       draft_release: ${{ inputs.draft_release }}
       dockerhub: true
+      # Pin the chart's image.tag / agentImage.tag and Chart.yaml versions in
+      # the release commit, like glab-docs pins its CI component template.
+      bump_command: scripts/pin-release-version.sh "$RELEASE_VERSION"
     secrets: inherit

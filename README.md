@@ -174,7 +174,9 @@ The agent itself does not run as a long-lived pod: it runs as a CI job on your G
    secrets:
      existingSecret: ai-agent-secrets
 
-   agentImage: m13t/ai-agent-for-gitlab/agent-image:latest
+   agentImage:
+     repository: m13t/ai-agent-for-gitlab-agent
+     tag: "0.1.0"
 
    agent:
      model: anthropic/claude-sonnet-5
@@ -208,8 +210,8 @@ Common chart values:
 
 | Value | Default | Description |
 | --- | --- | --- |
-| `image.repository` / `image.tag` | `m13t/ai-agent-for-gitlab/gitlab-app` / appVersion | Webhook app image |
-| `agentImage` | `m13t/ai-agent-for-gitlab/agent-image:latest` | Forwarded as `AI_AGENT_IMAGE`; empty keeps each project's own |
+| `image.repository` / `image.tag` | `m13t/ai-agent-for-gitlab-app` / release version | Webhook app image; an empty tag falls back to appVersion |
+| `agentImage.repository` / `agentImage.tag` | `m13t/ai-agent-for-gitlab-agent` / release version | Forwarded as `AI_AGENT_IMAGE=<repository>:<tag>`; an empty repository keeps each project's own |
 | `gitlab.url`, `gitlab.aiUsername`, `gitlab.aiEmail` | `https://gitlab.com`, –, – | GitLab instance and AI service account (`aiUsername` is required) |
 | `secrets.existingSecret` | `""` | Existing Secret with `GITLAB_TOKEN`, `WEBHOOK_SECRET`, `ADMIN_TOKEN` (key names configurable via `secrets.keys.*`) |
 | `secrets.gitlabToken`, `secrets.webhookSecret`, `secrets.adminToken` | `""` | Used when no existing Secret is given; `adminToken` is generated if empty |

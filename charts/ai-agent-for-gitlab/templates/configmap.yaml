@@ -9,7 +9,7 @@ data:
   GITLAB_URL: {{ .Values.gitlab.url | quote }}
   AI_GITLAB_USERNAME: {{ required "gitlab.aiUsername is required" .Values.gitlab.aiUsername | quote }}
   AI_GITLAB_EMAIL: {{ .Values.gitlab.aiEmail | quote }}
-  AI_AGENT_IMAGE: {{ .Values.agentImage | quote }}
+  AI_AGENT_IMAGE: {{ include "ai-agent.agentImage" . | quote }}
   TRIGGER_PHRASE: {{ .Values.agent.triggerPhrase | quote }}
   OPENCODE_MODEL: {{ .Values.agent.model | quote }}
   {{- with .Values.agent.prompt }}

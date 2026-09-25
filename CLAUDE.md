@@ -9,7 +9,7 @@ GitLab AI agent: a webhook middleware triggers GitLab CI pipelines that run an o
   - `Merge Request Hook`: `AI_GITLAB_USERNAME` newly added as reviewer or assignee (see `aiUserNewlyRequested`). This is the replacement for GitLab Duo reviews.
   - `commonPipelineVariables()` holds the pipeline variables shared by both triggers. Add new shared variables there.
 - `agent-image/`: image for the CI job (`ai-runner`, opencode, MCP server in `scripts/mcp/mcp.ts`). It runs **only as a CI job** on GitLab runners, never as a long-lived pod.
-- `charts/ai-agent-for-gitlab/`: Helm chart for the **gitlab-app** (plus optional Redis and Ingress). Its `agentImage` value reaches pipelines as `AI_AGENT_IMAGE`.
+- `charts/ai-agent-for-gitlab/`: Helm chart for the **gitlab-app** (plus optional Redis and Ingress). Its `agentImage.repository`/`.tag` values reach pipelines as `AI_AGENT_IMAGE` (via the `ai-agent.agentImage` helper).
 - `gitlab-utils/.gitlab-ci.yml`: template for target projects. The job runs when `AI_TRIGGER == "true"`.
 
 ## Behavior worth knowing
@@ -22,7 +22,7 @@ GitLab AI agent: a webhook middleware triggers GitLab CI pipelines that run an o
 - The prompt is truncated to 8000 chars (`MAX_PROMPT_CHARS`) to stay within CI variable limits.
 - CI/release use the shared `m13tLabs/gh-actions-templates` workflows (`docker-ci.yml` once per image dir, `docker-release.yml` with `agent-image/` as the "variant" build). One release versions both images together via root `config.json`; they are published as `{ghcr.io/m13tlabs,docker.io/m13t}/ai-agent-for-gitlab-{app,agent}`.
 - The agent image is amd64-only (its `dotnetimages/...` base has no arm64), hence `variant_platforms: linux/amd64` in `release.yml`.
-- A release bumps only `config.json`, not the chart's `appVersion`, so bump that by hand if the chart should default to the new image tag.
+- A release also runs `scripts/pin-release-version.sh` (the template's `bump_command`), which pins `image.tag`, `agentImage.tag` and Chart.yaml `version`/`appVersion` to the release version in the release commit. Keep the `tag:` keys directly inside the top-level `image:` / `agentImage:` blocks, or the script fails the release.
 
 ## Verification
 
