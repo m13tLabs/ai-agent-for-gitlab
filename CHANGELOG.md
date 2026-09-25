@@ -1,4 +1,15 @@
 
+## [0.2.0](https://github.com/m13tLabs/ai-agent-for-gitlab/compare/v0.1.1...v0.2.0) (2026-09-25)
+
+### Features
+
+* Update stack ([6764524](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/6764524d6a9b10fc20a1afbeb4f66cfb6ca0ac18))
+
+* **Gitlab:** Automate gitlab configuration ([793976d](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/793976d008b2f4d5a8f140357a24e8f4a2769ea7))
+
+
+
+
 ## [0.1.1](https://github.com/m13tLabs/ai-agent-for-gitlab/compare/...v0.1.1) (2026-09-25)
 
 ### Bug Fixes
