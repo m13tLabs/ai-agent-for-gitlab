@@ -8,7 +8,7 @@
 FROM node:24.21.0-bookworm-slim AS node
 
 # renovate: datasource=docker depName=mcr.microsoft.com/dotnet/sdk versioning=docker
-FROM mcr.microsoft.com/dotnet/sdk:8.0
+FROM mcr.microsoft.com/dotnet/sdk:11.0
 
 ARG BUILD_DATE
 ARG APP_VERSION
