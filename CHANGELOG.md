@@ -1,4 +1,13 @@
 
+## [0.2.1](https://github.com/m13tLabs/ai-agent-for-gitlab/compare/v0.2.0...v0.2.1) (2026-09-26)
+
+### Documentation
+
+* Adding artifacthub links ([2be789e](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/2be789e9d76fb4d9be01e09b9f25cd31232e25d8))
+
+
+
+
 ## [0.2.0](https://github.com/m13tLabs/ai-agent-for-gitlab/compare/v0.1.1...v0.2.0) (2026-09-25)
 
 ### Features
