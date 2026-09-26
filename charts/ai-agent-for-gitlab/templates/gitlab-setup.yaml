@@ -6,7 +6,7 @@ kind: ServiceAccount
 metadata:
   name: {{ $name }}
   labels:
-    {{- include "ai-agent.labels" . | nindent 4 }}
+    {{- include "ai-agent.setupLabels" . | nindent 4 }}
 ---
 # Least privilege: read/update only the bot-token Secret (create can't be
 # narrowed by name in RBAC) and restart only this release's Deployment.
@@ -15,7 +15,7 @@ kind: Role
 metadata:
   name: {{ $name }}
   labels:
-    {{- include "ai-agent.labels" . | nindent 4 }}
+    {{- include "ai-agent.setupLabels" . | nindent 4 }}
 rules:
   - apiGroups: [""]
     resources: ["secrets"]
@@ -34,7 +34,7 @@ kind: RoleBinding
 metadata:
   name: {{ $name }}
   labels:
-    {{- include "ai-agent.labels" . | nindent 4 }}
+    {{- include "ai-agent.setupLabels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
@@ -50,7 +50,7 @@ kind: ConfigMap
 metadata:
   name: {{ $name }}-avatar
   labels:
-    {{- include "ai-agent.labels" . | nindent 4 }}
+    {{- include "ai-agent.setupLabels" . | nindent 4 }}
 binaryData:
   bot-avatar.png: {{ .Files.Get "files/bot-avatar.png" | b64enc }}
 {{- end }}
@@ -62,8 +62,7 @@ kind: Job
 metadata:
   name: {{ $name }}
   labels:
-    {{- include "ai-agent.labels" . | nindent 4 }}
-    app.kubernetes.io/component: gitlab-setup
+    {{- include "ai-agent.setupLabels" . | nindent 4 }}
   annotations:
     helm.sh/hook: post-install,post-upgrade
     helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
@@ -72,8 +71,7 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "ai-agent.selectorLabels" . | nindent 8 }}
-        app.kubernetes.io/component: gitlab-setup
+        {{- include "ai-agent.setupSelectorLabels" . | nindent 8 }}
     spec:
       {{- include "ai-agent.setupPodSpec" . | nindent 6 }}
 ---
@@ -83,8 +81,7 @@ kind: CronJob
 metadata:
   name: {{ $name }}
   labels:
-    {{- include "ai-agent.labels" . | nindent 4 }}
-    app.kubernetes.io/component: gitlab-setup
+    {{- include "ai-agent.setupLabels" . | nindent 4 }}
 spec:
   schedule: {{ .Values.gitlabSetup.schedule | quote }}
   concurrencyPolicy: Forbid
@@ -96,8 +93,7 @@ spec:
       template:
         metadata:
           labels:
-            {{- include "ai-agent.selectorLabels" . | nindent 12 }}
-            app.kubernetes.io/component: gitlab-setup
+            {{- include "ai-agent.setupSelectorLabels" . | nindent 12 }}
         spec:
           {{- include "ai-agent.setupPodSpec" . | nindent 10 }}
 {{- end }}

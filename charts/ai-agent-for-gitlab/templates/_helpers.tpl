@@ -38,6 +38,20 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 app.kubernetes.io/component: redis
 {{- end }}
 
+{{/* Labels for the gitlabSetup Job/CronJob and its RBAC (component: gitlab-setup). */}}
+{{- define "ai-agent.setupLabels" -}}
+helm.sh/chart: {{ include "ai-agent.chart" . }}
+{{ include "ai-agent.setupSelectorLabels" . }}
+app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- end }}
+
+{{- define "ai-agent.setupSelectorLabels" -}}
+app.kubernetes.io/name: {{ include "ai-agent.name" . }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+app.kubernetes.io/component: gitlab-setup
+{{- end }}
+
 {{- define "ai-agent.serviceAccountName" -}}
 {{- if .Values.serviceAccount.create }}
 {{- default (include "ai-agent.fullname" .) .Values.serviceAccount.name }}
