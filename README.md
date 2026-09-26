@@ -2,11 +2,14 @@
   <img src="./docs/assets/logo.svg" width="128" alt="AI agent for GitLab logo">
 </p>
 
+[![Artifact Hub](https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/ai-agent-for-gitlab)](https://artifacthub.io/packages/search?repo=ai-agent-for-gitlab)
+[![Docker Pulls: gitlab-app](https://img.shields.io/docker/pulls/m13t/ai-agent-for-gitlab-app?logo=docker&label=gitlab-app%20pulls)](https://hub.docker.com/r/m13t/ai-agent-for-gitlab-app)
+[![Docker Pulls: agent](https://img.shields.io/docker/pulls/m13t/ai-agent-for-gitlab-agent?logo=docker&label=agent%20pulls)](https://hub.docker.com/r/m13t/ai-agent-for-gitlab-agent)
+
+
 # `@agent` on Gitlab
 
 ![Comments Showcase](./docs/assets/header.png)
-
-[![Artifact Hub](https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/ai-agent-for-gitlab)](https://artifacthub.io/packages/search?repo=ai-agent-for-gitlab)
 
 This is a system that allows you to trigger an agent with the command @agent, which can then search, edit and commit your code, as well as post comments on your GitLab MR or issue.
 The agent runs securely in your pipeline runner.
