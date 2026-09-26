@@ -252,7 +252,7 @@ Common chart values:
 | `agentImage.repository` / `agentImage.tag` | `m13t/ai-agent-for-gitlab-agent` / release version | Forwarded as `AI_AGENT_IMAGE=<repository>:<tag>`; an empty repository keeps each project's own |
 | `gitlab.url`, `gitlab.aiUsername`, `gitlab.aiEmail` | `https://gitlab.com`, –, – | GitLab instance and AI service account (`aiUsername` is required) |
 | `secrets.existingSecret` | `""` | Existing Secret with `GITLAB_TOKEN`, `WEBHOOK_SECRET`, `ADMIN_TOKEN` (key names configurable via `secrets.keys.*`) |
-| `secrets.gitlabToken`, `secrets.webhookSecret`, `secrets.adminToken` | `""` | Used when no existing Secret is given; `adminToken` is generated if empty |
+| `secrets.gitlabToken`, `secrets.webhookSecret`, `secrets.adminToken` | `""` | Used when no existing Secret is given; `webhookSecret` and `adminToken` are generated if empty and kept across upgrades (set them explicitly with `helm template`/GitOps, where the chart can't read back the generated value) |
 | `secrets.gitlabAdminToken` | `""` | GitLab admin token for `gitlabSetup` (only mounted into the setup Job/CronJob) |
 | `secrets.secretKeyRefs.<token>.name` / `.key` | `""` | Take a single token (`gitlabToken`, `webhookSecret`, `adminToken`, `gitlabAdminToken`) from another existing Secret, e.g. `gitlabToken: {name: gitlab-token, key: token}`; the chart Secret still holds the others. An empty `key` falls back to `secrets.keys.<token>` |
 | `gitlabSetup.enabled`, `.groups`, `.accessLevel`, `.systemHook.url`, `.schedule` | `false`, `[]`, `30`, in-cluster Service, hourly | [Automated GitLab setup](#automated-gitlab-setup-optional) |

@@ -93,7 +93,7 @@ GitLab webhook middleware that triggers AI agent pipelines on @ai mentions and w
 | secrets.gitlabToken | string | `""` | Token of the AI service account (scopes: api, read_repository, write_repository). Not used when gitlabSetup.enabled: the setup job creates and rotates the bot token. |
 | secrets.keys | object | `{"adminToken":"ADMIN_TOKEN","gitlabAdminToken":"GITLAB_ADMIN_TOKEN","gitlabToken":"GITLAB_TOKEN","webhookSecret":"WEBHOOK_SECRET"}` | Keys inside the existing Secret |
 | secrets.secretKeyRefs | object | `{"adminToken":{"key":"","name":""},"gitlabAdminToken":{"key":"","name":""},"gitlabToken":{"key":"","name":""},"webhookSecret":{"key":"","name":""}}` | Per-token references to other existing Secrets, e.g. `gitlabToken: {name: gitlab-token, key: token}`. A set `name` overrides existingSecret and the inline value for that token only; an empty `key` falls back to secrets.keys.<token>. The chart Secret still holds the rest. |
-| secrets.webhookSecret | string | `""` | Secret token configured on the GitLab webhook |
+| secrets.webhookSecret | string | `""` | Secret token configured on the GitLab webhook. Generated (and kept across upgrades) when empty; read it from the Secret shown in the install notes. Set it explicitly with `helm template`/GitOps tools, where `lookup` can't see the cluster and a generated value would change on every render. |
 | securityContext.allowPrivilegeEscalation | bool | `false` |  |
 | securityContext.capabilities.drop[0] | string | `"ALL"` |  |
 | securityContext.readOnlyRootFilesystem | bool | `true` |  |

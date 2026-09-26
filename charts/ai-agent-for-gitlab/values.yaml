@@ -58,7 +58,10 @@ secrets:
   # -- GitLab administrator token (scopes: api, admin_mode) for gitlabSetup. Only
   # mounted into the setup Job/CronJob, never into the webhook pods.
   gitlabAdminToken: ""
-  # -- Secret token configured on the GitLab webhook
+  # -- Secret token configured on the GitLab webhook. Generated (and kept across
+  # upgrades) when empty; read it from the Secret shown in the install notes.
+  # Set it explicitly with `helm template`/GitOps tools, where `lookup` can't
+  # see the cluster and a generated value would change on every render.
   webhookSecret: ""
   # -- Bearer token for /admin endpoints. Generated (and kept across upgrades) when empty.
   adminToken: ""
