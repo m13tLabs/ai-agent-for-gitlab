@@ -6,6 +6,8 @@
 
 ![Comments Showcase](./docs/assets/header.png)
 
+[![Artifact Hub](https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/ai-agent-for-gitlab)](https://artifacthub.io/packages/search?repo=ai-agent-for-gitlab)
+
 This is a system that allows you to trigger an agent with the command @agent, which can then search, edit and commit your code, as well as post comments on your GitLab MR or issue.
 The agent runs securely in your pipeline runner.
 
