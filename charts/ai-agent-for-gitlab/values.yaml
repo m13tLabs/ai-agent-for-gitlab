@@ -22,7 +22,7 @@ agentImage:
   repository: m13t/ai-agent-for-gitlab-agent
   # -- Set to the release version by each release (scripts/pin-release-version.sh).
   # "" falls back to .Chart.AppVersion.
-  tag: "0.3.1"
+  tag: "0.2"
 
 gitlab:
   # -- GitLab instance URL
