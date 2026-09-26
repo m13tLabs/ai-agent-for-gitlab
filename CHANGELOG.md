@@ -1,4 +1,13 @@
 
+## [0.3.1](https://github.com/m13tLabs/ai-agent-for-gitlab/compare/v0.3.0...v0.3.1) (2026-09-26)
+
+### Bug Fixes
+
+* **Helm:** Correcting duplicate label error ([2ae53cc](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/2ae53ccc7a9a7799c87d9aef3db714a60cf37d12))
+
+
+
+
 ## [0.3.0](https://github.com/m13tLabs/ai-agent-for-gitlab/compare/v0.2.2...v0.3.0) (2026-09-26)
 
 ### Documentation
