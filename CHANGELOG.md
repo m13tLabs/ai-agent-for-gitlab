@@ -1,4 +1,21 @@
 
+## [0.3.0](https://github.com/m13tLabs/ai-agent-for-gitlab/compare/v0.2.2...v0.3.0) (2026-09-26)
+
+### Documentation
+
+* Adding docker badges ([07c07c0](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/07c07c0c4eb2341cd0cd3a9f6f150c032eaaa157))
+
+
+
+### Features
+
+* Allow finer re-use of existing tokens ([055f772](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/055f772f6741ca9abc0e364b2d0cceef6bffd474))
+
+* **Secrets:** Auto-generate webhook secret ([2a2f3c5](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/2a2f3c5bd957b43470c70639bd18c55c09f62ec5))
+
+
+
+
 ## [0.2.2](https://github.com/m13tLabs/ai-agent-for-gitlab/compare/v0.2.0...v0.2.2) (2026-09-26)
 
 ### Documentation
