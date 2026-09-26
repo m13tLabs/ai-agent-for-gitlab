@@ -61,19 +61,16 @@ spec:
                   key: GITLAB_TOKEN
                   optional: true
                   {{- else }}
-                  name: {{ include "ai-agent.secretName" . }}
-                  key: {{ .Values.secrets.keys.gitlabToken }}
+                  {{- include "ai-agent.secretKeyRef" (list . "gitlabToken") | nindent 18 }}
                   {{- end }}
             - name: WEBHOOK_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "ai-agent.secretName" . }}
-                  key: {{ .Values.secrets.keys.webhookSecret }}
+                  {{- include "ai-agent.secretKeyRef" (list . "webhookSecret") | nindent 18 }}
             - name: ADMIN_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "ai-agent.secretName" . }}
-                  key: {{ .Values.secrets.keys.adminToken }}
+                  {{- include "ai-agent.secretKeyRef" (list . "adminToken") | nindent 18 }}
             # Root filesystem is read-only; point $HOME at the writable tmp volume
             - name: HOME
               value: /tmp

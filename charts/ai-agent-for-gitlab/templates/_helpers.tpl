@@ -51,6 +51,27 @@ app.kubernetes.io/component: redis
 {{- end }}
 
 {{/*
+secretKeyRef body (name + key) for one token, called with (list $ "<token>")
+where <token> is gitlabToken, webhookSecret, adminToken or gitlabAdminToken.
+secrets.secretKeyRefs.<token>.name wins (key defaults to secrets.keys.<token>);
+otherwise existingSecret or the chart Secret with secrets.keys.<token>.
+*/}}
+{{- define "ai-agent.secretKeyRef" -}}
+{{- $root := index . 0 }}
+{{- $token := index . 1 }}
+{{- $key := index $root.Values.secrets.keys $token }}
+{{- $refs := $root.Values.secrets.secretKeyRefs | default dict }}
+{{- $refName := dig $token "name" "" $refs }}
+{{- if $refName -}}
+name: {{ $refName | quote }}
+key: {{ dig $token "key" "" $refs | default $key | quote }}
+{{- else -}}
+name: {{ include "ai-agent.secretName" $root | quote }}
+key: {{ $key | quote }}
+{{- end }}
+{{- end }}
+
+{{/*
 Agent image forwarded as AI_AGENT_IMAGE: "<repository>:<tag>", or "" when
 repository is empty. A plain string (the pre-split form of agentImage) is
 passed through unchanged.
@@ -120,8 +141,7 @@ containers:
       - name: GITLAB_ADMIN_TOKEN
         valueFrom:
           secretKeyRef:
-            name: {{ include "ai-agent.secretName" . }}
-            key: {{ .Values.secrets.keys.gitlabAdminToken }}
+            {{- include "ai-agent.secretKeyRef" (list . "gitlabAdminToken") | nindent 12 }}
       - name: AI_GITLAB_USERNAME
         value: {{ required "gitlab.aiUsername is required" .Values.gitlab.aiUsername | quote }}
       - name: AI_GITLAB_EMAIL
@@ -148,8 +168,7 @@ containers:
       - name: WEBHOOK_SECRET
         valueFrom:
           secretKeyRef:
-            name: {{ include "ai-agent.secretName" . }}
-            key: {{ .Values.secrets.keys.webhookSecret }}
+            {{- include "ai-agent.secretKeyRef" (list . "webhookSecret") | nindent 12 }}
       {{- end }}
       - name: BOT_TOKEN_SECRET
         value: {{ include "ai-agent.botTokenSecretName" . }}

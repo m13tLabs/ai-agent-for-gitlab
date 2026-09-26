@@ -43,6 +43,15 @@ secrets:
     webhookSecret: WEBHOOK_SECRET
     adminToken: ADMIN_TOKEN
     gitlabAdminToken: GITLAB_ADMIN_TOKEN
+  # -- Per-token references to other existing Secrets, e.g.
+  # `gitlabToken: {name: gitlab-token, key: token}`. A set `name` overrides
+  # existingSecret and the inline value for that token only; an empty `key`
+  # falls back to secrets.keys.<token>. The chart Secret still holds the rest.
+  secretKeyRefs:
+    gitlabToken: {name: "", key: ""}
+    webhookSecret: {name: "", key: ""}
+    adminToken: {name: "", key: ""}
+    gitlabAdminToken: {name: "", key: ""}
   # -- Token of the AI service account (scopes: api, read_repository, write_repository).
   # Not used when gitlabSetup.enabled: the setup job creates and rotates the bot token.
   gitlabToken: ""

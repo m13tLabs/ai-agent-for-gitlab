@@ -254,6 +254,7 @@ Common chart values:
 | `secrets.existingSecret` | `""` | Existing Secret with `GITLAB_TOKEN`, `WEBHOOK_SECRET`, `ADMIN_TOKEN` (key names configurable via `secrets.keys.*`) |
 | `secrets.gitlabToken`, `secrets.webhookSecret`, `secrets.adminToken` | `""` | Used when no existing Secret is given; `adminToken` is generated if empty |
 | `secrets.gitlabAdminToken` | `""` | GitLab admin token for `gitlabSetup` (only mounted into the setup Job/CronJob) |
+| `secrets.secretKeyRefs.<token>.name` / `.key` | `""` | Take a single token (`gitlabToken`, `webhookSecret`, `adminToken`, `gitlabAdminToken`) from another existing Secret, e.g. `gitlabToken: {name: gitlab-token, key: token}`; the chart Secret still holds the others. An empty `key` falls back to `secrets.keys.<token>` |
 | `gitlabSetup.enabled`, `.groups`, `.accessLevel`, `.systemHook.url`, `.schedule` | `false`, `[]`, `30`, in-cluster Service, hourly | [Automated GitLab setup](#automated-gitlab-setup-optional) |
 | `agent.triggerPhrase`, `agent.model`, `agent.prompt` | `@ai`, `azure/gpt-4.1`, `""` | `TRIGGER_PHRASE`, `OPENCODE_MODEL`, `OPENCODE_AGENT_PROMPT` |
 | `review.onAssignment`, `review.onAssignee`, `review.prompt` | `true`, `true`, `""` | Reviewer/assignee triggered reviews |
