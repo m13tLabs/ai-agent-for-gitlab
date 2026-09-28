@@ -238,16 +238,29 @@ async function ensureBot(cfg: SetupConfig, gl: ReturnType<typeof gitlab>): Promi
     // Keep name/email in sync with the chart values.
     const wantEmail = bot.email && user.email !== bot.email ? bot.email : undefined;
     if (user.name !== bot.name || wantEmail) {
-      await gl.request("PUT", `/users/${user.id}`, {
-        name: bot.name,
-        ...(wantEmail ? { email: wantEmail, skip_reconfirmation: true } : {}),
+      await cosmetic("Could not update bot account", async () => {
+        await gl.request("PUT", `/users/${user.id}`, {
+          name: bot.name,
+          ...(wantEmail ? { email: wantEmail, skip_reconfirmation: true } : {}),
+        });
+        logger.info("Updated bot account", { username: bot.username, id: user.id });
       });
-      logger.info("Updated bot account", { username: bot.username, id: user.id });
     }
   }
 
-  if (bot.avatarPath) await ensureAvatar(gl, user.id, bot.avatarPath);
+  if (bot.avatarPath) await cosmetic("Could not upload bot avatar", () => ensureAvatar(gl, user.id, bot.avatarPath));
   return user;
+}
+
+// Profile/avatar updates are cosmetic: GitLab can reject them (e.g. a 500 on
+// PUT /users/:id for a service account), which must not stop the group
+// memberships, system hook and token steps that follow.
+async function cosmetic(warning: string, step: () => Promise<void>) {
+  try {
+    await step();
+  } catch (e) {
+    logger.warn(warning, { error: e instanceof Error ? e.message : e });
+  }
 }
 
 // GitLab gives no way to compare avatar contents, so the uploaded file's hash
