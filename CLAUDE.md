@@ -11,6 +11,7 @@ GitLab AI agent: a webhook middleware triggers GitLab CI pipelines that run an o
 - `agent-image/`: image for the CI job (`ai-runner`, opencode, MCP server in `scripts/mcp/mcp.ts`). It runs **only as a CI job** on GitLab runners, never as a long-lived pod.
 - `charts/ai-agent-for-gitlab/`: Helm chart for the **gitlab-app** (plus optional Redis and Ingress). Its `agentImage.repository`/`.tag` values reach pipelines as `AI_AGENT_IMAGE` (via the `ai-agent.agentImage` helper).
 - `gitlab-utils/.gitlab-ci.yml`: template for target projects. The job runs when `AI_TRIGGER == "true"`.
+- `templates/agent-runner.yml`: GitLab CI/CD component for the central runner project (`AI_RUNNER_PROJECT`), published from a GitLab mirror as `gitlab.com/m13tlabs/ai-agent-for-gitlab/agent-runner`. `templates/README.md` is generated: `docker run --rm -v "$PWD:/w" -w /w --entrypoint glab-docs m13t/glab-docs:1.0.0 --search-root templates --component-prefix gitlab.com/m13tlabs/ai-agent-for-gitlab --documentation-strict-mode`. `triggerPipeline`/`cancelOldPipelines` in `gitlab.ts` redirect there; the target travels as `AI_PROJECT_ID` (always set, read by the agent before `CI_PROJECT_ID`), `AI_PROJECT_PATH` and `AI_BRANCH`. All runner pipelines share one ref, so cancelling filters by those variables, and the template turns GitLab's auto-cancel off (it would cancel runs for other targets).
 
 ## Behavior worth knowing
 

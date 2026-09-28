@@ -19,6 +19,8 @@ GitLab webhook middleware that triggers AI agent pipelines on @ai mentions and w
 | agent.cancelOldPipelines | bool | `true` | Cancel older pending pipelines on the same ref |
 | agent.model | string | `"azure/gpt-4.1"` | opencode model in provider/model form |
 | agent.prompt | string | `""` | Base prompt for the agent (OPENCODE_AGENT_PROMPT) |
+| agent.runnerProject | string | `""` | Central project (full path or id) that runs every agent pipeline, so the other projects need no .gitlab-ci.yml changes; see the agent-runner CI/CD component in templates/. Empty = run in each project's own pipeline. |
+| agent.runnerRef | string | `""` | Branch of the runner project to run the pipelines on; empty = its default branch |
 | agent.startReactionEmoji | string | `"robot"` | Emoji awarded when a run starts |
 | agent.triggerPhrase | string | `"@ai"` | Mention that triggers the agent in comments |
 | agentImage | object | `{"repository":"m13t/ai-agent-for-gitlab-agent","tag":"0.4.0"}` | Image the CI job uses to run the agent, forwarded to pipelines as AI_AGENT_IMAGE=<repository>:<tag>. Pipeline variables override the default in .gitlab-ci.yml, so every project uses this image. Set repository to "" to keep each project's own AI_AGENT_IMAGE. |

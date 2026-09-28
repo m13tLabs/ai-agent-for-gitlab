@@ -119,6 +119,64 @@ You will need to add the following CI/CD variables in your GitLab project (Setti
 
 Copy the `.gitlab-ci.yml` file in `gitlab-utils` to your project root, or add the important parts to your existing configuration. The pipelines variables can also be added. I strongly recommend adapting the existing Agent Prompt. With `CUSTOM_AGENT_PROMPT` you can set repository-specific instructions for the agent. But first look at the default prompt (in the gitlab-app).
 
+#### Runner mode: one central runner project
+
+The setup above needs a job in every project's `.gitlab-ci.yml`. In **runner mode**, all agent pipelines run in one dedicated project instead, and the other projects stay untouched:
+
+| | Per-project mode (default) | Runner mode |
+| --- | --- | --- |
+| Where the agent pipeline runs | In the project where `@ai` was mentioned | In the runner project, e.g. `ai/agent-runner` |
+| Changes to project `.gitlab-ci.yml` files | An `AI_TRIGGER` job in each project | None |
+| `GITLAB_TOKEN` and provider keys | CI/CD variables per project or group | CI/CD variables on the runner project only (or injected by its runner) |
+| Pipeline shows up on the MR | Yes | No, in the runner project; the agent still replies on the MR |
+| Per-project `CUSTOM_AGENT_PROMPT` | Yes | No, one prompt for all projects (`custom-agent-prompt` input) |
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Dev as Developer
+    participant P as team-a/app<br/>(MR !3, branch feature)
+    participant W as Webhook app
+    participant R as ai/agent-runner
+    participant J as Agent job<br/>(agent-runner component)
+    participant LLM as LLM provider
+
+    Dev->>P: Comment "@ai fix the failing test"
+    P->>W: Note Hook
+    W->>P: React to the comment
+    W->>R: Create pipeline on main with AI_PROJECT_ID=team-a/app's id,<br/>AI_PROJECT_PATH=team-a/app, AI_BRANCH=feature, DIRECT_PROMPT, ...
+    W->>R: Cancel older pending pipelines for the same project + branch
+    R->>J: Start ai_webhook_handler
+    J->>P: Clone team-a/app, check out feature (GITLAB_TOKEN)
+    J->>LLM: Run opencode with the prompt
+    J->>P: Push commits to feature
+    J->>P: Reply in the comment thread
+```
+
+The webhook app only switches the target: with `AI_RUNNER_PROJECT` set, it creates the pipeline in the runner project (on `AI_RUNNER_REF`, default: its default branch) and adds the target as pipeline variables. The agent reads `AI_PROJECT_ID` and `AI_PROJECT_PATH` instead of the runner project's `CI_PROJECT_*` and clones the target itself, so the runner project's own files are never checked out.
+
+Setup:
+
+1. Create the runner project, e.g. `ai/agent-runner`, with this `.gitlab-ci.yml`. It includes the [`agent-runner` CI/CD component](templates/README.md) from [`templates/`](templates/agent-runner.yml):
+
+   ```yaml
+   include:
+     - component: gitlab.com/m13tlabs/ai-agent-for-gitlab/agent-runner@<version>
+       inputs:
+         tags: [ai-agent]   # optional: a dedicated runner
+   ```
+
+   CI/CD components can only be included from a GitLab project. On a self-managed instance, mirror this repository into it and use `$CI_SERVER_FQDN/<group>/ai-agent-for-gitlab/agent-runner@<version>`.
+2. Add `GITLAB_TOKEN` and the provider keys (see [Create Pipeline](#create-pipeline)) as CI/CD variables of the runner project, not protected. Or let a dedicated runner inject them from a Kubernetes Secret, and select it with the `tags` input.
+3. Point the webhook app at it: `AI_RUNNER_PROJECT=ai/agent-runner` (chart: `agent.runnerProject`).
+
+Notes:
+
+- The bot behind `GITLAB_TOKEN` needs Developer access to every target project. `gitlabSetup` grants it.
+- The runner mode needs an agent image that reads `AI_PROJECT_ID`, i.e. from the same release as the webhook app. An older one would work on the runner project instead of the target.
+- The component sets `workflow:` so that only the webhook's pipelines run, and turns GitLab's *auto-cancel redundant pipelines* off. All agent pipelines share one branch there, so auto-cancel would stop runs for other projects. The webhook app cancels only older runs for the same project and branch (`CANCEL_OLD_PIPELINES`).
+- The pipeline variables in the runner project contain the prompts and discussion excerpts of every target project. Keep its membership small.
+
 ### GitLab Webhook App
 
 You can run the prebuilt image locally:
@@ -262,6 +320,7 @@ Common chart values:
 | Value | Default | Description |
 | --- | --- | --- |
 | `image.repository` / `image.tag` | `m13t/ai-agent-for-gitlab-app` / release version | Webhook app image; an empty tag falls back to appVersion |
+| `agent.runnerProject`, `agent.runnerRef` | `""`, `""` | [Central runner project](#runner-mode-one-central-runner-project) that runs every agent pipeline; empty = each project's own pipeline |
 | `agentImage.repository` / `agentImage.tag` | `m13t/ai-agent-for-gitlab-agent` / release version | Forwarded as `AI_AGENT_IMAGE=<repository>:<tag>`; an empty repository keeps each project's own |
 | `gitlab.url`, `gitlab.aiUsername`, `gitlab.aiEmail` | `https://gitlab.com`, –, – | GitLab instance and AI service account (`aiUsername` is required) |
 | `secrets.existingSecret` | `""` | Existing Secret with `GITLAB_TOKEN`, `WEBHOOK_SECRET`, `ADMIN_TOKEN` (key names configurable via `secrets.keys.*`) |
@@ -296,6 +355,8 @@ See [`values.yaml`](./charts/ai-agent-for-gitlab/values.yaml) for all options.
 
 - `PORT`: Server port (default: 3000)
 - `CANCEL_OLD_PIPELINES`: Cancel older pending pipelines (default: true)
+- `AI_RUNNER_PROJECT`: Central project (full path or id) that runs every agent pipeline, see [Runner mode](#runner-mode-one-central-runner-project) (default: each project's own pipeline)
+- `AI_RUNNER_REF`: Branch of the runner project to run on (default: its default branch)
 - `TRIGGER_PHRASE`: Custom trigger phrase instead of `@ai` (default: `@ai`)
 - `BRANCH_PREFIX`: Prefix for branches created by AI (default: `ai`)
 - `OPENCODE_MODEL`: The model used by opencode in `provider/model` (for azure its the deployment name) form (e.g., `azure/gpt-4.1`)

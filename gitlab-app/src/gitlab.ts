@@ -7,6 +7,19 @@ const gitlab = new Gitlab({
   token: process.env.GITLAB_TOKEN!,
 });
 
+// Optional central runner project (AI_RUNNER_PROJECT: id or full path). When
+// set, every pipeline runs there instead of in the project the event came
+// from, so projects need no .gitlab-ci.yml changes. The agent learns the
+// target from AI_PROJECT_ID / AI_PROJECT_PATH / AI_BRANCH.
+const runnerProject = process.env.AI_RUNNER_PROJECT || "";
+let runnerRef = process.env.AI_RUNNER_REF || "";
+
+async function pipelineTarget(projectId: number, ref: string): Promise<{ project: string | number; ref: string }> {
+  if (!runnerProject) return { project: projectId, ref };
+  if (!runnerRef) runnerRef = (await getProject(runnerProject)).default_branch;
+  return { project: runnerProject, ref: runnerRef };
+}
+
 export async function triggerPipeline(
   projectId: number,
   ref: string,
@@ -24,18 +37,21 @@ export async function triggerPipeline(
     const gitlabUrl = process.env.GITLAB_URL || "https://gitlab.com";
     const token = process.env.GITLAB_TOKEN!;
 
-    // Transform variables to GitLab API format
-    let pipelineVariables: Array<{ key: string; value: string }> = variables
-      ? Object.entries(variables).map(([key, value]) => ({ key, value }))
-      : [];
+    // Transform variables to GitLab API format. AI_PROJECT_ID names the
+    // target project even when the pipeline runs in the runner project.
+    let pipelineVariables: Array<{ key: string; value: string }> = Object.entries({
+      ...variables,
+      AI_PROJECT_ID: String(projectId),
+    }).map(([key, value]) => ({ key, value }));
 
+    const target = await pipelineTarget(projectId, ref);
     const requestBody = {
-      ref,
+      ref: target.ref,
       variables: pipelineVariables,
     };
 
     // Important: Use the general pipeline endpoint so variables (like AI_TRIGGER) are honored
-    const baseUrl = `${gitlabUrl}/api/v4/projects/${projectId}/pipeline`;
+    const baseUrl = `${gitlabUrl}/api/v4/projects/${encodeURIComponent(String(target.project))}/pipeline`;
 
     logger.debug("Pipeline request body", {
       url: baseUrl,
@@ -104,6 +120,7 @@ export async function triggerPipeline(
 
     logger.info("Pipeline created successfully", {
       pipelineId: responseData.id,
+      pipelineProject: target.project,
       webUrl: responseData.web_url,
       status: responseData.status,
     });
@@ -129,19 +146,31 @@ export async function cancelOldPipelines(
     logger.debug("Fetching pipelines for cancellation", { projectId, ref });
 
     // List pipelines for the ref
-    const pipelines: Array<{ id: number }> = await gitlab.Pipelines.all(
-      projectId,
-      {
-        ref,
+    const target = await pipelineTarget(projectId, ref);
+    let pipelines: Array<{ id: number }> = (
+      await gitlab.Pipelines.all(target.project, {
+        ref: target.ref,
         status: "pending",
-      }
-    );
+      })
+    ).filter((p: { id: number }) => p.id !== keepPipelineId);
+
+    // The runner project's ref is shared by every target, so only its
+    // pipelines for the same project and branch are "old" ones.
+    if (runnerProject) {
+      const sameTarget = await Promise.all(
+        pipelines.map(async (p) => {
+          const vars = await gitlab.Pipelines.allVariables(target.project, p.id);
+          const value = (key: string) => vars.find((v) => v.key === key)?.value;
+          return value("AI_PROJECT_ID") === String(projectId) && value("AI_BRANCH") === ref;
+        })
+      );
+      pipelines = pipelines.filter((_, i) => sameTarget[i]);
+    }
 
     // Cancel old pipelines
     const cancelPromises = pipelines
-      .filter((p: { id: number }) => p.id !== keepPipelineId)
       .map((p: { id: number }) =>
-        gitlab.Pipelines.cancel(projectId, p.id).catch((err: unknown) => {
+        gitlab.Pipelines.cancel(target.project, p.id).catch((err: unknown) => {
           logger.warn(`Failed to cancel pipeline ${p.id}:`, {
             error: err instanceof Error ? err.message : err,
           });
@@ -241,7 +270,7 @@ export async function addReactionToNote(params: {
 }
 
 // Get project details including default branch
-export async function getProject(projectId: number): Promise<{
+export async function getProject(projectId: number | string): Promise<{
   id: number;
   default_branch: string;
   path_with_namespace: string;

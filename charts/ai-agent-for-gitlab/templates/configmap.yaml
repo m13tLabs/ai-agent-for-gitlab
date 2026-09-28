@@ -16,6 +16,12 @@ data:
   OPENCODE_AGENT_PROMPT: {{ . | quote }}
   {{- end }}
   BRANCH_PREFIX: {{ .Values.agent.branchPrefix | quote }}
+  {{- with .Values.agent.runnerProject }}
+  AI_RUNNER_PROJECT: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.agent.runnerRef }}
+  AI_RUNNER_REF: {{ . | quote }}
+  {{- end }}
   CANCEL_OLD_PIPELINES: {{ .Values.agent.cancelOldPipelines | toString | quote }}
   START_REACTION_EMOJI: {{ .Values.agent.startReactionEmoji | quote }}
   REVIEW_ON_ASSIGNMENT: {{ .Values.review.onAssignment | toString | quote }}

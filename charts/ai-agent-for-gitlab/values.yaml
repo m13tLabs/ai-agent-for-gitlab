@@ -143,6 +143,13 @@ agent:
   prompt: ""
   # -- Prefix for branches created for issues
   branchPrefix: ai
+  # -- Central project (full path or id) that runs every agent pipeline, so
+  # the other projects need no .gitlab-ci.yml changes; see
+  # the agent-runner CI/CD component in templates/. Empty = run in each
+  # project's own pipeline.
+  runnerProject: ""
+  # -- Branch of the runner project to run the pipelines on; empty = its default branch
+  runnerRef: ""
   # -- Cancel older pending pipelines on the same ref
   cancelOldPipelines: true
   # -- Emoji awarded when a run starts

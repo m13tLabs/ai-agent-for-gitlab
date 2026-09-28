@@ -23,7 +23,9 @@ export function buildContext() {
     agentPrompt: combinedPrompt,
     gitlabToken: process.env.GITLAB_TOKEN,
     host: process.env.CI_SERVER_HOST || "gitlab.com",
-    projectId: process.env.CI_PROJECT_ID,
+    // AI_PROJECT_ID is the target project, also when the pipeline runs in a
+    // central runner project; CI_PROJECT_ID covers pipelines from older webhooks.
+    projectId: process.env.AI_PROJECT_ID || process.env.CI_PROJECT_ID,
     serverUrl: process.env.CI_SERVER_URL || "https://gitlab.com",
     checkoutDir: "./repo",
   };

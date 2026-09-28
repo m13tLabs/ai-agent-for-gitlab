@@ -1,0 +1,56 @@
+# -- Runs the AI agent for every project from one central runner project
+# (the chart's `agent.runnerProject`), so the target projects need no
+# .gitlab-ci.yml changes. The webhook creates the pipelines through the API and
+# passes the target as AI_PROJECT_ID / AI_PROJECT_PATH / AI_BRANCH; the agent
+# clones it with GITLAB_TOKEN. Include it only in the dedicated runner project:
+# it sets `workflow:`, so it would disable every other pipeline there.
+spec:
+  inputs:
+    stage:
+      default: ai
+      description: Pipeline stage the agent job runs in.
+    job-name:
+      default: ai_webhook_handler
+      description: Name of the agent job.
+    image:
+      default: m13t/ai-agent-for-gitlab-agent:latest
+      description: >-
+        Agent image (AI_AGENT_IMAGE). The chart's `agentImage` is passed as a
+        pipeline variable and wins over this default.
+    tags:
+      type: array
+      default: []
+      description: Runner tags, e.g. of a dedicated runner that injects the provider keys from a Kubernetes Secret.
+    custom-agent-prompt:
+      default: ""
+      description: Instructions appended to the agent prompt (CUSTOM_AGENT_PROMPT), for every target project.
+---
+
+workflow:
+  rules:
+    # Only pipelines the webhook creates; pushes to the runner project don't run the agent.
+    - if: '$CI_PIPELINE_SOURCE == "api" && $AI_TRIGGER == "true" && $AI_PROJECT_ID'
+  # All agent pipelines share one branch, so GitLab's "auto-cancel redundant
+  # pipelines" would cancel pending runs for other targets. The webhook cancels
+  # only older runs for the same target (agent.cancelOldPipelines).
+  auto_cancel:
+    on_new_commit: none
+
+stages:
+  - $[[ inputs.stage ]]
+
+variables:
+  # -- Agent image; overridden by the webhook's AI_AGENT_IMAGE pipeline variable
+  AI_AGENT_IMAGE: $[[ inputs.image ]]
+
+# -- Runs `ai-runner` against the target project given by the pipeline variables.
+"$[[ inputs.job-name ]]":
+  stage: $[[ inputs.stage ]]
+  image: $AI_AGENT_IMAGE
+  tags: $[[ inputs.tags ]]
+  variables:
+    # The agent clones the target project itself.
+    GIT_STRATEGY: none
+    CUSTOM_AGENT_PROMPT: $[[ inputs.custom-agent-prompt ]]
+  script:
+    - ai-runner
