@@ -8,6 +8,9 @@
 //   projects team-a/app (10, bot inherits Developer, has our hook),
 //            team-a/sub/lib (11), team-b/tool (12), team-a/old (13, archived)
 //   bot      review-agent (7); its stored token is valid, so no rotation
+//   deployment web: its pods last ran with CONFIG_CHECKSUM "chart-sum" and
+//            WEBHOOK_SECRET "hook-secret"
+import { createHash } from "node:crypto";
 import http from "node:http";
 
 const BOT_ID = 7;
@@ -55,6 +58,11 @@ function route(method, url) {
   if (method === "GET" && path.startsWith("/api/v1/namespaces/test/secrets/")) {
     return [200, { data: { GITLAB_TOKEN: Buffer.from("stored-bot-token").toString("base64") } }];
   }
+  if (method === "GET" && path === "/apis/apps/v1/namespaces/test/deployments/web") {
+    const checksum = createHash("sha256").update("chart-sum\0hook-secret").digest("hex");
+    const annotations = { "ai-agent-for-gitlab/config-checksum": checksum };
+    return [200, { spec: { template: { metadata: { annotations } } } }];
+  }
   if (method !== "GET") return [201, { id: 1000 + writes.length }];
   return [404, { message: `unmocked ${method} ${path}` }];
 }
@@ -79,7 +87,7 @@ Object.assign(process.env, {
   AI_GITLAB_USERNAME: "review-agent",
   BOT_NAME: "AI Agent",
   SYSTEM_HOOK_URL: "http://ai-agent/webhook",
-  WEBHOOK_SECRET: "hook-secret",
+  WEBHOOK_SECRET: process.env.WEBHOOK_SECRET || "hook-secret",
   BOT_TOKEN_SECRET: "bot-token",
   K8S_API_URL: base,
   K8S_NAMESPACE: "test",

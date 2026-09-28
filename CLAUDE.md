@@ -67,6 +67,7 @@ GitLab AI agent: a webhook middleware triggers GitLab CI pipelines that run an o
 
 - `readOnlyRootFilesystem: true` works only because the pod sets `HOME=/tmp` and mounts an emptyDir at `/tmp`, so anything writing to `$HOME` has a writable place. Keep both if you touch the deployment.
 - `checksum/secret` hashes `.Values.secrets`, not the rendered `secret.yaml`. Rendering the secret calls `randAlphaNum` again, so its hash differs from the stored secret after install and the first no-op upgrade would roll the pods.
+- Without `lookup` (Argo CD, Flux, `helm template`), a generated `WEBHOOK_SECRET` changes on every render while `checksum/secret` doesn't, so pods kept the old one while setup registered hooks with the new one (every webhook → 401). setup.ts therefore hashes the webhook secret in use into its config checksum and restarts the Deployment when it changed.
 - `ADMIN_TOKEN` stays the same across upgrades because the chart uses `lookup` to reuse the existing Secret. `helm template` (no cluster) always shows a fresh random value, which is expected.
 - Bundled Redis is rendered only when `rateLimiting.enabled && redis.enabled`. Otherwise `redis.externalUrl` is required if rate limiting is on.
 

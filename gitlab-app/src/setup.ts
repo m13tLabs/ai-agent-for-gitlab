@@ -16,7 +16,8 @@
 //      Deployment reads as GITLAB_TOKEN; rotated before expiry, after which the
 //      Deployment is restarted to pick the new token up
 //   6. webhook Deployment restarted when the chart's gitlab.*/secrets.* values
-//      changed (CONFIG_CHECKSUM vs. the annotation the pods last ran with)
+//      or the webhook secret in use changed (CONFIG_CHECKSUM + WEBHOOK_SECRET
+//      vs. the annotation the pods last ran with)
 //
 // SETUP_GROUPS / SETUP_PROJECTS are JSON arrays of glob patterns (`*`, `?`,
 // matched case-insensitively against the full path; `*` also matches `/`) or
@@ -57,7 +58,8 @@ export interface SetupConfig {
     // Deployment restarted after a rotation so pods load the new token.
     deployment: string;
   };
-  // Checksum of the chart's gitlab.*/secrets.* values; "" disables the check.
+  // Checksum of the chart's gitlab.*/secrets.* values plus the webhook secret
+  // in use; "" disables the check.
   configChecksum: string;
   kube: { apiUrl: string; namespace: string; token: string };
 }
@@ -87,6 +89,17 @@ function requireEnv(name: string): string {
   const value = process.env[name];
   if (!value) throw new Error(`Missing ${name} environment variable`);
   return value;
+}
+
+// The chart's CONFIG_CHECKSUM only covers values. A generated webhook secret
+// isn't a value and changes whenever the chart is rendered without `lookup`
+// (Argo CD, Flux, helm template): the hooks get the new secret from this run,
+// so the pods must restart to compare against the same one. Hence the secret
+// actually in use is hashed in too.
+function configChecksum(chartChecksum: string, webhookSecret: string): string {
+  if (!chartChecksum) return "";
+  if (!webhookSecret) return chartChecksum;
+  return createHash("sha256").update(`${chartChecksum}\0${webhookSecret}`).digest("hex");
 }
 
 async function readIfExists(path: string): Promise<string> {
@@ -134,7 +147,7 @@ export async function loadConfig(env = process.env): Promise<SetupConfig> {
       secretKey: env.BOT_TOKEN_SECRET_KEY || "GITLAB_TOKEN",
       deployment: env.RESTART_DEPLOYMENT || "",
     },
-    configChecksum: env.CONFIG_CHECKSUM || "",
+    configChecksum: configChecksum(env.CONFIG_CHECKSUM || "", env.WEBHOOK_SECRET || ""),
     kube: {
       apiUrl:
         env.K8S_API_URL ||
