@@ -9,7 +9,7 @@ metadata:
     {{- include "ai-agent.setupLabels" . | nindent 4 }}
 ---
 # Least privilege: read/update only the bot-token Secret (create can't be
-# narrowed by name in RBAC) and restart only this release's Deployment.
+# narrowed by name in RBAC) and read/restart only this release's Deployment.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -27,7 +27,7 @@ rules:
   - apiGroups: ["apps"]
     resources: ["deployments"]
     resourceNames: [{{ include "ai-agent.fullname" . | quote }}]
-    verbs: ["patch"]
+    verbs: ["get", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -57,6 +57,7 @@ binaryData:
 ---
 # Runs once per install/upgrade. Post-hook, so the ServiceAccount, Role,
 # ConfigMap and the chart Secret (admin token, webhook secret) already exist.
+# Restarts the webhook Deployment when gitlab.* or secrets.* changed.
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -70,6 +71,8 @@ spec:
   backoffLimit: 3
   template:
     metadata:
+      annotations:
+        checksum/config: {{ include "ai-agent.setupConfigChecksum" . }}
       labels:
         {{- include "ai-agent.setupSelectorLabels" . | nindent 8 }}
     spec:
@@ -92,6 +95,8 @@ spec:
       backoffLimit: 2
       template:
         metadata:
+          annotations:
+            checksum/config: {{ include "ai-agent.setupConfigChecksum" . }}
           labels:
             {{- include "ai-agent.setupSelectorLabels" . | nindent 12 }}
         spec:

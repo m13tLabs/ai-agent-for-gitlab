@@ -117,7 +117,7 @@ passed through unchanged.
 {{- end }}
 
 {{- define "ai-agent.setupName" -}}
-{{- printf "%s-gitlab-setup" (include "ai-agent.fullname" .) | trunc 52 | trimSuffix "-" }}
+{{- printf "%s-setup" (include "ai-agent.fullname" .) | trunc 52 | trimSuffix "-" }}
 {{- end }}
 
 {{/* URL the GitLab system hook posts to: explicit, or the in-cluster Service. */}}
@@ -127,6 +127,14 @@ passed through unchanged.
 {{- else }}
 {{- printf "http://%s.%s.svc.cluster.local:%v/webhook" (include "ai-agent.fullname" .) .Release.Namespace .Values.service.port }}
 {{- end }}
+{{- end }}
+
+{{/*
+Checksum of the values the setup and the webhook pods depend on. The setup
+restarts the Deployment when it differs from the one the pods last ran with.
+*/}}
+{{- define "ai-agent.setupConfigChecksum" -}}
+{{- dict "gitlab" .Values.gitlab "secrets" .Values.secrets | toJson | sha256sum }}
 {{- end }}
 
 {{/* Pod spec shared by the gitlabSetup Job and CronJob (runs src/setup.ts). */}}
@@ -192,6 +200,8 @@ containers:
         value: {{ $setup.token.renewBeforeDays | toString | quote }}
       - name: RESTART_DEPLOYMENT
         value: {{ include "ai-agent.fullname" . }}
+      - name: CONFIG_CHECKSUM
+        value: {{ include "ai-agent.setupConfigChecksum" . | quote }}
       # Lets fetch() trust the in-cluster API server certificate.
       - name: NODE_EXTRA_CA_CERTS
         value: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt

@@ -11,6 +11,8 @@
 //   4. bot personal access token, stored in a Kubernetes Secret the webhook
 //      Deployment reads as GITLAB_TOKEN; rotated before expiry, after which the
 //      Deployment is restarted to pick the new token up
+//   5. webhook Deployment restarted when the chart's gitlab.*/secrets.* values
+//      changed (CONFIG_CHECKSUM vs. the annotation the pods last ran with)
 
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -20,6 +22,7 @@ const HOOK_NAME = "ai-agent-for-gitlab";
 const TOKEN_NAME = "ai-agent-for-gitlab";
 const AVATAR_ATTRIBUTE = "ai_agent_for_gitlab_avatar_sha256";
 const SA_DIR = "/var/run/secrets/kubernetes.io/serviceaccount";
+const CHECKSUM_ANNOTATION = "ai-agent-for-gitlab/config-checksum";
 
 export interface SetupConfig {
   gitlabUrl: string;
@@ -43,6 +46,8 @@ export interface SetupConfig {
     // Deployment restarted after a rotation so pods load the new token.
     deployment: string;
   };
+  // Checksum of the chart's gitlab.*/secrets.* values; "" disables the check.
+  configChecksum: string;
   kube: { apiUrl: string; namespace: string; token: string };
 }
 
@@ -105,6 +110,7 @@ export async function loadConfig(env = process.env): Promise<SetupConfig> {
       secretKey: env.BOT_TOKEN_SECRET_KEY || "GITLAB_TOKEN",
       deployment: env.RESTART_DEPLOYMENT || "",
     },
+    configChecksum: env.CONFIG_CHECKSUM || "",
     kube: {
       apiUrl:
         env.K8S_API_URL ||
@@ -118,6 +124,25 @@ export async function loadConfig(env = process.env): Promise<SetupConfig> {
 // ---------------------------------------------------------------------------
 // HTTP helpers
 // ---------------------------------------------------------------------------
+
+// fetch() rejects network failures with a bare "fetch failed"; the reason
+// (ENOTFOUND, ECONNREFUSED, a TLS error, ...) is only in `cause`. Rethrow with
+// the URL and that reason so the setup log says what actually went wrong.
+async function fetchOrExplain(url: string, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, init);
+  } catch (e) {
+    throw new Error(`${init?.method ?? "GET"} ${url} failed: ${describeCause(e)}`, { cause: e });
+  }
+}
+
+function describeCause(e: unknown): string {
+  const cause = (e as { cause?: unknown })?.cause ?? e;
+  if (cause instanceof AggregateError) return cause.errors.map(describeCause).join("; ");
+  const { code, message } = cause as { code?: string; message?: string };
+  if (!message) return code ?? String(cause);
+  return code && !message.includes(code) ? `${code}: ${message}` : message;
+}
 
 function gitlab(cfg: SetupConfig) {
   const request = async (
@@ -134,7 +159,7 @@ function gitlab(cfg: SetupConfig) {
       headers["Content-Type"] = "application/json";
       payload = JSON.stringify(body);
     }
-    const res = await fetch(`${cfg.gitlabUrl}/api/v4${path}`, { method, headers, body: payload });
+    const res = await fetchOrExplain(`${cfg.gitlabUrl}/api/v4${path}`, { method, headers, body: payload });
     const text = await res.text();
     if (!res.ok) {
       throw new GitLabError(res.status, `GitLab ${method} ${path} failed: ${res.status} ${text.slice(0, 300)}`);
@@ -148,7 +173,7 @@ function gitlab(cfg: SetupConfig) {
     let page = "1";
     while (page) {
       const sep = path.includes("?") ? "&" : "?";
-      const res = await fetch(`${cfg.gitlabUrl}/api/v4${path}${sep}per_page=100&page=${page}`, {
+      const res = await fetchOrExplain(`${cfg.gitlabUrl}/api/v4${path}${sep}per_page=100&page=${page}`, {
         headers: { "PRIVATE-TOKEN": cfg.adminToken },
       });
       if (!res.ok) {
@@ -165,7 +190,7 @@ function gitlab(cfg: SetupConfig) {
 
 function kube(cfg: SetupConfig) {
   return async (method: string, path: string, body?: Json, contentType = "application/json") => {
-    const res = await fetch(`${cfg.kube.apiUrl}${path}`, {
+    const res = await fetchOrExplain(`${cfg.kube.apiUrl}${path}`, {
       method,
       headers: {
         Authorization: `Bearer ${cfg.kube.token}`,
@@ -314,7 +339,8 @@ async function ensureSystemHook(cfg: SetupConfig, gl: ReturnType<typeof gitlab>)
   }
 }
 
-async function ensureBotToken(cfg: SetupConfig, gl: ReturnType<typeof gitlab>, userId: number) {
+// Returns true when a new token was stored (and the Deployment restarted).
+async function ensureBotToken(cfg: SetupConfig, gl: ReturnType<typeof gitlab>, userId: number): Promise<boolean> {
   const k8s = kube(cfg);
   const secretPath = `/api/v1/namespaces/${cfg.kube.namespace}/secrets/${cfg.token.secretName}`;
 
@@ -336,7 +362,7 @@ async function ensureBotToken(cfg: SetupConfig, gl: ReturnType<typeof gitlab>, u
       const expires = self.expires_at ? Date.parse(self.expires_at) : Infinity;
       if (self.active && self.user_id === userId && expires > renewBy) {
         logger.info("Bot token still valid", { expiresAt: self.expires_at });
-        return;
+        return false;
       }
       logger.info("Rotating bot token", { expiresAt: self.expires_at, active: self.active });
     } catch (e) {
@@ -378,29 +404,59 @@ async function ensureBotToken(cfg: SetupConfig, gl: ReturnType<typeof gitlab>, u
     );
   }
 
-  await restartDeployment(cfg, k8s);
+  await restartDeployment(cfg, k8s, "load the new token", {
+    "ai-agent-for-gitlab/token-rotated-at": new Date().toISOString(),
+  });
+  return true;
 }
 
-async function restartDeployment(cfg: SetupConfig, k8s: ReturnType<typeof kube>) {
+// Restarts the Deployment when the chart's gitlab.*/secrets.* values changed
+// since its pods were last (re)started by this setup.
+async function ensureDeploymentConfig(cfg: SetupConfig) {
+  if (!cfg.token.deployment || !cfg.configChecksum) return;
+  const k8s = kube(cfg);
+  const res = await k8s("GET", deploymentPath(cfg));
+  if (res.status === 404) {
+    logger.info("Deployment not found yet, nothing to restart", { deployment: cfg.token.deployment });
+    return;
+  }
+  if (res.status >= 300) {
+    logger.warn("Could not read deployment", { deployment: cfg.token.deployment, status: res.status });
+    return;
+  }
+  if (res.body?.spec?.template?.metadata?.annotations?.[CHECKSUM_ANNOTATION] === cfg.configChecksum) {
+    logger.info("Deployment config unchanged", { deployment: cfg.token.deployment });
+    return;
+  }
+  await restartDeployment(cfg, k8s, "apply changed gitlab/secrets values");
+}
+
+function deploymentPath(cfg: SetupConfig) {
+  return `/apis/apps/v1/namespaces/${cfg.kube.namespace}/deployments/${cfg.token.deployment}`;
+}
+
+// Patching the pod template rolls the pods; the config checksum is recorded on
+// every restart so ensureDeploymentConfig doesn't restart them a second time.
+async function restartDeployment(
+  cfg: SetupConfig,
+  k8s: ReturnType<typeof kube>,
+  reason: string,
+  annotations: Record<string, string> = {}
+) {
   if (!cfg.token.deployment) return;
+  if (cfg.configChecksum) annotations[CHECKSUM_ANNOTATION] = cfg.configChecksum;
   const res = await k8s(
     "PATCH",
-    `/apis/apps/v1/namespaces/${cfg.kube.namespace}/deployments/${cfg.token.deployment}`,
-    {
-      spec: {
-        template: {
-          metadata: { annotations: { "ai-agent-for-gitlab/token-rotated-at": new Date().toISOString() } },
-        },
-      },
-    },
+    deploymentPath(cfg),
+    { spec: { template: { metadata: { annotations } } } },
     "application/strategic-merge-patch+json"
   );
   if (res.status === 404) {
     logger.info("Deployment not found yet, nothing to restart", { deployment: cfg.token.deployment });
   } else if (res.status >= 300) {
-    logger.warn("Could not restart deployment after token rotation", { status: res.status });
+    logger.warn("Could not restart deployment", { deployment: cfg.token.deployment, reason, status: res.status });
   } else {
-    logger.info("Restarted deployment to load the new token", { deployment: cfg.token.deployment });
+    logger.info("Restarted deployment", { deployment: cfg.token.deployment, reason });
   }
 }
 
@@ -413,7 +469,8 @@ export async function runSetup(cfg: SetupConfig) {
   const bot = await ensureBot(cfg, gl);
   await ensureMemberships(cfg, gl, bot.id);
   if (cfg.hook.enabled) await ensureSystemHook(cfg, gl);
-  await ensureBotToken(cfg, gl, bot.id);
+  const restarted = await ensureBotToken(cfg, gl, bot.id);
+  if (!restarted) await ensureDeploymentConfig(cfg);
   logger.info("GitLab setup complete", { bot: cfg.bot.username });
 }
 
