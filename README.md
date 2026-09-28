@@ -321,6 +321,7 @@ Common chart values:
 | Value | Default | Description |
 | --- | --- | --- |
 | `image.repository` / `image.tag` | `m13t/ai-agent-for-gitlab-app` / release version | Webhook app image; an empty tag falls back to appVersion |
+| `agent.disableModelsFetch` | `false` | `OPENCODE_DISABLE_MODELS_FETCH` for the agent jobs: use the model catalog baked into the agent image (air-gapped runners) |
 | `agent.runnerProject`, `agent.runnerRef` | `""`, `""` | [Central runner project](#runner-mode-one-central-runner-project) that runs every agent pipeline; empty = each project's own pipeline |
 | `agentImage.repository` / `agentImage.tag` | `m13t/ai-agent-for-gitlab-agent` / release version | Forwarded as `AI_AGENT_IMAGE=<repository>:<tag>`; an empty repository keeps each project's own |
 | `gitlab.url`, `gitlab.aiUsername`, `gitlab.aiEmail` | `https://gitlab.com`, –, – | GitLab instance and AI service account (`aiUsername` is required) |
@@ -358,6 +359,7 @@ See [`values.yaml`](./charts/ai-agent-for-gitlab/values.yaml) for all options.
 - `CANCEL_OLD_PIPELINES`: Cancel older pending pipelines (default: true)
 - `AI_RUNNER_PROJECT`: Central project (full path or id) that runs every agent pipeline, see [Runner mode](#runner-mode-one-central-runner-project) (default: each project's own pipeline)
 - `AI_RUNNER_REF`: Branch of the runner project to run on (default: its default branch)
+- `OPENCODE_DISABLE_MODELS_FETCH`: `true` forwards it to every pipeline, so opencode in the agent job doesn't fetch its model catalog and uses the one baked into the agent image at build time; for air-gapped runners (default: false). Models released after the image build then need a newer agent image.
 - `TRIGGER_PHRASE`: Custom trigger phrase instead of `@ai` (default: `@ai`)
 - `BRANCH_PREFIX`: Prefix for branches created by AI (default: `ai`)
 - `OPENCODE_MODEL`: The model used by opencode in `provider/model` (for azure its the deployment name) form (e.g., `azure/gpt-4.1`)

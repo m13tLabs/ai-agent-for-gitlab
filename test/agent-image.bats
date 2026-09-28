@@ -86,6 +86,33 @@ in_image() {
   assert_output_contains "AZURE_RESOURCE_NAME is not set"
 }
 
+# fake_node prints what `ai-runner` hands opencode as OPENCODE_MODELS_PATH.
+fake_node_models_path='
+  mkdir -p /tmp/fake
+  printf "%s\n" "#!/bin/sh" "echo \"path=\$OPENCODE_MODELS_PATH\"" > /tmp/fake/node
+  chmod +x /tmp/fake/node
+  PATH=/tmp/fake:$PATH ai-runner'
+
+@test "ai-runner uses the baked-in model catalog only with the fetch disabled" {
+  run --separate-stderr in_image "OPENCODE_DISABLE_MODELS_FETCH=true; export OPENCODE_DISABLE_MODELS_FETCH; $fake_node_models_path"
+  assert_output "path=/opt/opencode-models.json"
+
+  # Default: opencode fetches as usual (a set path would make it ignore the fetch).
+  run --separate-stderr in_image "$fake_node_models_path"
+  assert_output "path="
+}
+
+@test "baked-in model catalog resolves models offline" {
+  # eu.anthropic.claude-fable-5 is only in the build-time catalog, not in
+  # opencode 1.18.33's compiled-in snapshot, so this proves the file is read.
+  run --separate-stderr docker run --rm --network none \
+    -e AWS_ACCESS_KEY_ID=x -e AWS_SECRET_ACCESS_KEY=x -e AWS_REGION=eu-central-1 \
+    -e OPENCODE_DISABLE_MODELS_FETCH=true -e OPENCODE_MODELS_PATH=/opt/opencode-models.json \
+    "$IMAGE" opencode models amazon-bedrock
+  [ "$status" -eq 0 ]
+  assert_output_contains "amazon-bedrock/eu.anthropic.claude-fable-5"
+}
+
 @test "carries the OCI source label" {
   run docker inspect -f '{{index .Config.Labels "org.opencontainers.image.source"}}' "$IMAGE"
   assert_output "https://github.com/m13tLabs/ai-agent-for-gitlab.git"

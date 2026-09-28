@@ -57,6 +57,14 @@ ARG OPENCODE_VERSION=1.18.33
 RUN npm install -g --no-audit --no-fund "opencode-ai@${OPENCODE_VERSION}" \
  && opencode --version
 
+# Model catalog from build time, for air-gapped runners. With
+# OPENCODE_DISABLE_MODELS_FETCH=true (chart: agent.disableModelsFetch),
+# `ai-runner` points OPENCODE_MODELS_PATH at it; otherwise opencode fetches the
+# catalog as usual (a set OPENCODE_MODELS_PATH would make it ignore the fetch).
+ARG OPENCODE_MODELS_URL=https://models.opencode.ai
+RUN curl -fsSL --retry 3 "${OPENCODE_MODELS_URL}/api.json" -o /opt/opencode-models.json \
+ && jq -e '."amazon-bedrock".models | length > 0' /opt/opencode-models.json > /dev/null
+
 # Runner sources
 WORKDIR /opt/agent
 COPY scripts/ /opt/agent/
@@ -64,7 +72,10 @@ RUN npm ci --omit=dev --no-audit --no-fund \
  && npm cache clean --force
 
 # `ai-runner` launcher; `$@` must reach the script unexpanded, hence single quotes.
-RUN printf '%s\n' '#!/usr/bin/env sh' 'exec node /opt/agent/ai-runner.js "$@"' > /usr/local/bin/ai-runner \
+# Without the models fetch, opencode uses the build-time catalog (see above).
+RUN printf '%s\n' '#!/usr/bin/env sh' \
+      'case "${OPENCODE_DISABLE_MODELS_FETCH:-}" in true|1) export OPENCODE_MODELS_PATH="${OPENCODE_MODELS_PATH:-/opt/opencode-models.json}" ;; esac' \
+      'exec node /opt/agent/ai-runner.js "$@"' > /usr/local/bin/ai-runner \
  && chmod +x /usr/local/bin/ai-runner
 
 # CI jobs invoke `ai-runner` themselves.

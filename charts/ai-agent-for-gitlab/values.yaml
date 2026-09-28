@@ -151,6 +151,10 @@ agent:
   runnerProject: ""
   # -- Branch of the runner project to run the pipelines on; empty = its default branch
   runnerRef: ""
+  # -- Stop opencode in the agent jobs from fetching its model catalog
+  # (OPENCODE_DISABLE_MODELS_FETCH); it then uses the catalog baked into the
+  # agent image at build time. For air-gapped runners.
+  disableModelsFetch: false
   # -- Cancel older pending pipelines on the same ref
   cancelOldPipelines: true
   # -- Emoji awarded when a run starts

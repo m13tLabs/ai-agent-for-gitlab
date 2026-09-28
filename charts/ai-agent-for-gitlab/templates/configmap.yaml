@@ -22,6 +22,7 @@ data:
   {{- with .Values.agent.runnerRef }}
   AI_RUNNER_REF: {{ . | quote }}
   {{- end }}
+  OPENCODE_DISABLE_MODELS_FETCH: {{ .Values.agent.disableModelsFetch | toString | quote }}
   CANCEL_OLD_PIPELINES: {{ .Values.agent.cancelOldPipelines | toString | quote }}
   START_REACTION_EMOJI: {{ .Values.agent.startReactionEmoji | quote }}
   REVIEW_ON_ASSIGNMENT: {{ .Values.review.onAssignment | toString | quote }}

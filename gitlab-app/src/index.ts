@@ -46,6 +46,11 @@ function commonPipelineVariables(triggerPhrase: string): Record<string, string> 
     variables.AI_AGENT_IMAGE = process.env.AI_AGENT_IMAGE;
   }
 
+  // Only forwarded when on, so a CI/CD variable can still enable it per project
+  if (process.env.OPENCODE_DISABLE_MODELS_FETCH === "true") {
+    variables.OPENCODE_DISABLE_MODELS_FETCH = "true";
+  }
+
   return variables;
 }
 
