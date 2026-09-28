@@ -33,12 +33,12 @@ GitLab AI agent: a webhook middleware triggers GitLab CI pipelines that run an o
 
   ```bash
   docker build -t ai-agent-for-gitlab-app:dev gitlab-app
-  IMAGE=ai-agent-for-gitlab-app:dev bats test/gitlab-app.bats
+  IMAGE=ai-agent-for-gitlab-app:dev bats test/gitlab-app.bats test/gitlab-setup.bats
   docker build -t ai-agent-for-gitlab-agent:dev agent-image
   IMAGE=ai-agent-for-gitlab-agent:dev bats test/agent-image.bats
   ```
 
-  `gitlab-app.bats` points `GITLAB_URL` at a closed port, so it only covers paths that answer without GitLab (auth, skip/ignore, self-trigger, disable, MR transition rules). A new response path that calls GitLab needs a GitLab mock instead.
+  `gitlab-app.bats` points `GITLAB_URL` at a closed port, so it only covers paths that answer without GitLab (auth, skip/ignore, self-trigger, disable, MR transition rules). A new response path that calls GitLab needs a GitLab mock instead. `gitlab-setup.bats` does that for `src/setup.ts`: `test/fixtures/setup-mock.mjs` runs it inside the image against an in-process GitLab + Kubernetes mock and prints the writes it received.
 - Typecheck: `cd gitlab-app && npm ci && npm run typecheck`. Run locally with `npm start` (Node >= 24.2 for `import.meta.main`).
 - Webhook logic without GitLab: import `gitlab-app/src/index.ts` with plain `node` (it only binds a port when run as the entrypoint), set `GITLAB_URL` to a local `node:http` mock and `RATE_LIMITING_ENABLED=false`, then call `app.fetch(new Request(...))` with fake `X-Gitlab-Event` / `X-Gitlab-Token` headers.
 - Chart: `helm lint charts/ai-agent-for-gitlab --set secrets.gitlabToken=x,secrets.webhookSecret=y,gitlab.aiUsername=review-agent`.

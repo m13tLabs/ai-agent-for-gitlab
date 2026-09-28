@@ -78,7 +78,7 @@ spec:
     spec:
       {{- include "ai-agent.setupPodSpec" . | nindent 6 }}
 ---
-# Re-sync: adds the bot to groups created since, rotates the token before expiry.
+# Re-sync: sets up groups/projects created since, rotates the token before expiry.
 apiVersion: batch/v1
 kind: CronJob
 metadata:

@@ -224,8 +224,9 @@ The agent itself does not run as a long-lived pod: it runs as a CI job on your G
 On self-managed GitLab, the chart can configure GitLab itself. Set `gitlabSetup.enabled: true` and give it a GitLab **administrator** token (scopes `api`, `admin_mode`) as `GITLAB_ADMIN_TOKEN` in the Secret (or `secrets.gitlabAdminToken`); `GITLAB_TOKEN` is then not needed. A Job runs on every install/upgrade, and a CronJob (hourly by default) keeps things in sync:
 
 - **Bot account**: creates `gitlab.aiUsername` as a service account (`gitlabSetup.accountType: user` for GitLab versions without the service account API), named `gitlabSetup.botName`, with the bundled bot avatar.
-- **Access everywhere**: adds the bot as *Developer* (`gitlabSetup.accessLevel`) to every top-level group, so subgroups and their projects inherit it. Groups created later are picked up by the CronJob. Limit it with `gitlabSetup.groups`.
+- **Group access**: adds the bot as *Developer* (`gitlabSetup.accessLevel`) to the groups matching `gitlabSetup.groups` (default `["*"]`: every group). A group whose selected parent already grants the same role is skipped, so by default only top-level groups get a membership and subgroups and their projects inherit it.
 - **System hook**: registers a system hook for merge request events pointing at the release's in-cluster Service. Set `gitlabSetup.systemHook.url` to the ingress URL when GitLab runs outside the cluster. Reviewer/assignee reviews then work on every project without per-project webhooks.
+- **Project webhooks**: for the projects matching `gitlabSetup.projects` (default `["*"]`: every project), adds the bot as member (unless it already inherits the role) and creates a project webhook with **Comments** enabled, so `@ai` mentions work. It uses the same URL, secret and TLS setting as the system hook, and sends merge request events too only when the system hook is disabled.
 - **Bot token**: creates the bot's access token (`api` scope, 90 days) and stores it in the Secret `<release>-bot-token`, which the webhook pods use as `GITLAB_TOKEN`. It's rotated 14 days before expiry, and the pods are restarted to load it.
 
 ```yaml
@@ -239,10 +240,22 @@ gitlabSetup:
   enabled: true
 ```
 
+`groups` and `projects` take full paths or glob patterns (`*`, `?`; case-insensitive, `*` also matches `/`), or objects with per-entry settings; the first matching entry wins, `[]` turns the step off. Groups and projects created later are picked up by the CronJob; archived projects and anything marked for deletion are skipped. Every run makes about three API calls per project, so narrow `projects` on large instances:
+
+```yaml
+gitlabSetup:
+  groups: ["team-a"]
+  projects:
+    - "team-a/*"                # every project below team-a, incl. subgroups
+    - path: other-group/app
+      accessLevel: 40           # Maintainer here
+      mergeRequestsEvents: true # also MR events via this project's webhook
+```
+
 > [!IMPORTANT]
-> System hooks can't send comment events, so `@ai` mentions still need a project or group webhook with **Comments** enabled. The CI jobs also still need `GITLAB_TOKEN` as a CI/CD variable (see [Create Pipeline](#create-pipeline)). The chart doesn't set an instance-wide variable, because every pipeline on the instance could read it.
+> System hooks can't send comment events, so `@ai` mentions only work in projects matching `gitlabSetup.projects` (or with a manually added project/group webhook with **Comments** enabled). The CI jobs also still need `GITLAB_TOKEN` as a CI/CD variable (see [Create Pipeline](#create-pipeline)). The chart doesn't set an instance-wide variable, because every pipeline on the instance could read it.
 >
-> `helm uninstall` leaves the bot account, its group memberships, the system hook and the `<release>-bot-token` Secret in place.
+> `helm uninstall` leaves the bot account, its memberships, the system hook, the project webhooks and the `<release>-bot-token` Secret in place.
 
 Common chart values:
 
@@ -255,7 +268,7 @@ Common chart values:
 | `secrets.gitlabToken`, `secrets.webhookSecret`, `secrets.adminToken` | `""` | Used when no existing Secret is given; `webhookSecret` and `adminToken` are generated if empty and kept across upgrades (set them explicitly with `helm template`/GitOps, where the chart can't read back the generated value) |
 | `secrets.gitlabAdminToken` | `""` | GitLab admin token for `gitlabSetup` (only mounted into the setup Job/CronJob) |
 | `secrets.secretKeyRefs.<token>.name` / `.key` | `""` | Take a single token (`gitlabToken`, `webhookSecret`, `adminToken`, `gitlabAdminToken`) from another existing Secret, e.g. `gitlabToken: {name: gitlab-token, key: token}`; the chart Secret still holds the others. An empty `key` falls back to `secrets.keys.<token>` |
-| `gitlabSetup.enabled`, `.groups`, `.accessLevel`, `.systemHook.url`, `.schedule` | `false`, `[]`, `30`, in-cluster Service, hourly | [Automated GitLab setup](#automated-gitlab-setup-optional) |
+| `gitlabSetup.enabled`, `.groups`, `.projects`, `.accessLevel`, `.systemHook.url`, `.schedule` | `false`, `["*"]`, `["*"]`, `30`, in-cluster Service, hourly | [Automated GitLab setup](#automated-gitlab-setup-optional) |
 | `agent.triggerPhrase`, `agent.model`, `agent.prompt` | `@ai`, `azure/gpt-4.1`, `""` | `TRIGGER_PHRASE`, `OPENCODE_MODEL`, `OPENCODE_AGENT_PROMPT` |
 | `review.onAssignment`, `review.onAssignee`, `review.prompt` | `true`, `true`, `""` | Reviewer/assignee triggered reviews |
 | `rateLimiting.enabled`, `.max`, `.window` | `true`, `3`, `900` | Rate limiting; when disabled no Redis is deployed |

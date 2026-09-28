@@ -175,14 +175,17 @@ containers:
       - name: BOT_ACCESS_LEVEL
         value: {{ $setup.accessLevel | toString | quote }}
       - name: SETUP_GROUPS
-        value: {{ join "," $setup.groups | quote }}
+        value: {{ $setup.groups | default list | toJson | quote }}
+      - name: SETUP_PROJECTS
+        value: {{ $setup.projects | default list | toJson | quote }}
       {{- if $setup.avatar }}
       - name: BOT_AVATAR_PATH
         value: /avatar/bot-avatar.png
       {{- end }}
       - name: SYSTEM_HOOK_ENABLED
         value: {{ $setup.systemHook.enabled | toString | quote }}
-      {{- if $setup.systemHook.enabled }}
+      {{- /* Hook target, shared by the system hook and the project webhooks. */}}
+      {{- if or $setup.systemHook.enabled $setup.projects }}
       - name: SYSTEM_HOOK_URL
         value: {{ include "ai-agent.systemHookUrl" . | quote }}
       - name: SYSTEM_HOOK_SSL_VERIFICATION

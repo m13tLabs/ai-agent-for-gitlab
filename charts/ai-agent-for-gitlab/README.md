@@ -1,6 +1,6 @@
 # ai-agent-for-gitlab
 
-![Version: 0.2.6](https://img.shields.io/badge/Version-0.2.6-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.3.2](https://img.shields.io/badge/AppVersion-0.3.2-informational?style=flat-square)
+![Version: 0.3.0](https://img.shields.io/badge/Version-0.3.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.3.1](https://img.shields.io/badge/AppVersion-0.3.1-informational?style=flat-square)
 
 GitLab webhook middleware that triggers AI agent pipelines on @ai mentions and when the AI user is requested as merge request reviewer/assignee.
 
@@ -29,19 +29,20 @@ GitLab webhook middleware that triggers AI agent pipelines on @ai mentions and w
 | gitlab.aiEmail | string | `""` | Email of the AI service account (used for commits) |
 | gitlab.aiUsername | string | `""` | Username of the AI service account the token belongs to (e.g. review-agent). GitLab reserves usernames starting with ai-, ai_, duo- and duo_. |
 | gitlab.url | string | `"https://gitlab.com"` | GitLab instance URL |
-| gitlabSetup.accessLevel | int | `30` | Role in each group: 30 = Developer, 40 = Maintainer |
+| gitlabSetup.accessLevel | int | `30` | Default bot role in each group/project: 30 = Developer, 40 = Maintainer. Roles are only raised, never lowered. |
 | gitlabSetup.accountType | string | `"service_account"` | "service_account" (instance service account) or "user" (regular user, for GitLab versions without the service account API) |
 | gitlabSetup.avatar | bool | `true` | Upload the bundled bot avatar (files/bot-avatar.png) as the bot's avatar |
 | gitlabSetup.botName | string | `"AI Agent"` | Display name of the bot account |
 | gitlabSetup.enabled | bool | `false` | Enable the automated GitLab setup (requires secrets.gitlabAdminToken) |
-| gitlabSetup.groups | list | `[]` | Full paths of the groups to join; empty = every top-level group |
+| gitlabSetup.groups | list | `["*"]` | Groups to add the bot to. Each entry is a full path or glob pattern (`*` and `?`, case-insensitive; `*` also matches `/`), or an object `{path: <pattern>, accessLevel: <role>}`; the first matching entry wins. A group is skipped when a selected ancestor already grants at least the same role, so `["*"]` = every group, but only top-level groups get a membership. `[]` = no groups. Groups marked for deletion are skipped. |
+| gitlabSetup.projects | list | `["*"]` | Projects to add the bot to and give a project webhook (comment events, needed for @mentions). Same pattern rules as `groups`, matched against the project's full path; objects also take `mergeRequestsEvents` (default: true only when systemHook.enabled is false, since both hooks would trigger every review twice). `["*"]` = every project, `[]` = none. The bot membership is skipped when an inherited role is already high enough; archived projects and projects marked for deletion are skipped. Each CronJob run makes about three API calls per project, so narrow this on large instances, e.g. `["my-group/*", {path: "other/app", accessLevel: 40}]`. |
 | gitlabSetup.resources.limits.memory | string | `"256Mi"` |  |
 | gitlabSetup.resources.requests.cpu | string | `"10m"` |  |
 | gitlabSetup.resources.requests.memory | string | `"64Mi"` |  |
-| gitlabSetup.schedule | string | `"17 * * * *"` | CronJob schedule for re-syncing (new groups, token rotation) |
+| gitlabSetup.schedule | string | `"17 * * * *"` | CronJob schedule for re-syncing (new groups/projects, token rotation) |
 | gitlabSetup.systemHook.enabled | bool | `true` | Register the merge request system hook |
-| gitlabSetup.systemHook.sslVerification | bool | `true` | Verify TLS when GitLab calls the hook URL |
-| gitlabSetup.systemHook.url | string | `""` | URL GitLab posts to; empty = this release's in-cluster Service (http://<fullname>.<namespace>.svc.cluster.local:<service.port>/webhook). Use the ingress URL when GitLab runs outside the cluster. |
+| gitlabSetup.systemHook.sslVerification | bool | `true` | Verify TLS when GitLab calls the hook URL (system hook and project webhooks) |
+| gitlabSetup.systemHook.url | string | `""` | URL GitLab posts to, for the system hook and the project webhooks; empty = this release's in-cluster Service (http://<fullname>.<namespace>.svc.cluster.local:<service.port>/webhook). Use the ingress URL when GitLab runs outside the cluster. |
 | gitlabSetup.token.expiryDays | int | `90` | Lifetime of the bot token in days |
 | gitlabSetup.token.renewBeforeDays | int | `14` | Rotate the bot token this many days before it expires |
 | image.pullPolicy | string | `"IfNotPresent"` |  |

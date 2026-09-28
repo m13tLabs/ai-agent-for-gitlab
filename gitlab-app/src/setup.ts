@@ -3,16 +3,24 @@
 // token; it never runs inside the internet-facing webhook pod.
 //
 // Every step is idempotent, so the CronJob can re-run it to pick up new
-// top-level groups and rotate the bot token before it expires:
+// groups/projects and rotate the bot token before it expires:
 //   1. bot account: create (service account, or plain user as a fallback),
 //      keep name/email in sync, upload the avatar when it changed
-//   2. Developer (configurable) on every top-level group, or on `SETUP_GROUPS`
+//   2. Developer (configurable) on the groups matching `SETUP_GROUPS`
+//      (default `*`: every group, but only the topmost ones get a membership)
 //   3. system hook for merge request events -> the webhook Service
-//   4. bot personal access token, stored in a Kubernetes Secret the webhook
+//   4. for the projects matching `SETUP_PROJECTS` (default `*`): bot
+//      membership (unless inherited) and a project webhook with comment events,
+//      which system hooks can't deliver
+//   5. bot personal access token, stored in a Kubernetes Secret the webhook
 //      Deployment reads as GITLAB_TOKEN; rotated before expiry, after which the
 //      Deployment is restarted to pick the new token up
-//   5. webhook Deployment restarted when the chart's gitlab.*/secrets.* values
+//   6. webhook Deployment restarted when the chart's gitlab.*/secrets.* values
 //      changed (CONFIG_CHECKSUM vs. the annotation the pods last ran with)
+//
+// SETUP_GROUPS / SETUP_PROJECTS are JSON arrays of glob patterns (`*`, `?`,
+// matched case-insensitively against the full path; `*` also matches `/`) or
+// {path, accessLevel, mergeRequestsEvents} objects; the first match wins.
 
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -35,8 +43,11 @@ export interface SetupConfig {
     avatarPath: string;
     accessLevel: number;
   };
-  // Full paths of the groups to join; empty = every top-level group.
-  groups: string[];
+  // Groups to join and projects to set up; [] = none.
+  groups: Target[];
+  projects: Target[];
+  // `enabled` only gates the system hook; url/token/sslVerification are also
+  // used for the project webhooks.
   hook: { enabled: boolean; url: string; token: string; sslVerification: boolean };
   token: {
     expiryDays: number;
@@ -49,6 +60,17 @@ export interface SetupConfig {
   // Checksum of the chart's gitlab.*/secrets.* values; "" disables the check.
   configChecksum: string;
   kube: { apiUrl: string; namespace: string; token: string };
+}
+
+export interface Target {
+  // Full path or glob pattern.
+  pattern: string;
+  // Bot role; defaults to bot.accessLevel.
+  accessLevel: number;
+  // Projects only: also send merge request events through the project
+  // webhook. Defaults to on only without the system hook, which already
+  // delivers them (both would trigger every review twice).
+  mergeRequestsEvents: boolean;
 }
 
 type Json = Record<string, any>;
@@ -81,6 +103,10 @@ export async function loadConfig(env = process.env): Promise<SetupConfig> {
     throw new Error(`BOT_ACCOUNT_TYPE must be service_account or user, got "${accountType}"`);
   }
   const hookEnabled = env.SYSTEM_HOOK_ENABLED !== "false";
+  const accessLevel = Number(env.BOT_ACCESS_LEVEL || 30);
+  const groups = parseTargets("SETUP_GROUPS", env.SETUP_GROUPS, accessLevel, false);
+  const projects = parseTargets("SETUP_PROJECTS", env.SETUP_PROJECTS, accessLevel, !hookEnabled);
+  const needsHookTarget = hookEnabled || projects.length > 0;
 
   return {
     gitlabUrl: (env.GITLAB_URL || "https://gitlab.com").replace(/\/+$/, ""),
@@ -91,16 +117,14 @@ export async function loadConfig(env = process.env): Promise<SetupConfig> {
       email: env.AI_GITLAB_EMAIL || "",
       accountType,
       avatarPath: env.BOT_AVATAR_PATH || "",
-      accessLevel: Number(env.BOT_ACCESS_LEVEL || 30),
+      accessLevel,
     },
-    groups: (env.SETUP_GROUPS || "")
-      .split(",")
-      .map((g) => g.trim())
-      .filter(Boolean),
+    groups,
+    projects,
     hook: {
       enabled: hookEnabled,
-      url: hookEnabled ? requireEnv("SYSTEM_HOOK_URL") : "",
-      token: hookEnabled ? requireEnv("WEBHOOK_SECRET") : "",
+      url: needsHookTarget ? requireEnv("SYSTEM_HOOK_URL") : "",
+      token: needsHookTarget ? requireEnv("WEBHOOK_SECRET") : "",
       sslVerification: env.SYSTEM_HOOK_SSL_VERIFICATION !== "false",
     },
     token: {
@@ -119,6 +143,82 @@ export async function loadConfig(env = process.env): Promise<SetupConfig> {
       token: env.K8S_TOKEN || (await readIfExists(`${SA_DIR}/token`)),
     },
   };
+}
+
+// Unset = ["*"] (everything), "" = []. A JSON array of patterns or
+// {path, accessLevel, mergeRequestsEvents} objects; a plain comma-separated
+// list (the pre-JSON SETUP_GROUPS format) is still accepted.
+export function parseTargets(
+  name: string,
+  raw: string | undefined,
+  defaultAccessLevel: number,
+  defaultMrEvents: boolean
+): Target[] {
+  if (raw === undefined) raw = '["*"]';
+  raw = raw.trim();
+  let entries: unknown[];
+  if (raw.startsWith("[")) {
+    try {
+      entries = JSON.parse(raw);
+    } catch (e) {
+      throw new Error(`${name} is not valid JSON: ${e instanceof Error ? e.message : e}`);
+    }
+    if (!Array.isArray(entries)) throw new Error(`${name} must be a JSON array`);
+  } else {
+    entries = raw.split(",");
+  }
+
+  const targets: Target[] = [];
+  entries.forEach((entry, i) => {
+    const t: Json = typeof entry === "string" ? { path: entry } : (entry as Json) ?? {};
+    const pattern = typeof t.path === "string" ? t.path.trim().replace(/^\/+|\/+$/g, "") : "";
+    if (!pattern) {
+      // Blank strings come from the comma form ("a,,b"); objects need a path.
+      if (typeof entry === "string") return;
+      throw new Error(`${name}[${i}] needs a path`);
+    }
+    const accessLevel = t.accessLevel == null ? defaultAccessLevel : Number(t.accessLevel);
+    if (!Number.isInteger(accessLevel)) throw new Error(`${name}[${i}].accessLevel must be a number`);
+    targets.push({
+      pattern,
+      accessLevel,
+      mergeRequestsEvents: t.mergeRequestsEvents == null ? defaultMrEvents : t.mergeRequestsEvents === true,
+    });
+  });
+  return targets;
+}
+
+function isGlob(pattern: string): boolean {
+  return /[*?]/.test(pattern);
+}
+
+// `*` = any characters (including `/`), `?` = one character. GitLab paths
+// are case-insensitive.
+export function globToRegExp(pattern: string): RegExp {
+  const source = pattern
+    .split("")
+    .map((c) => (c === "*" ? ".*" : c === "?" ? "." : c.replace(/[.+^${}()|[\]\\]/g, "\\$&")))
+    .join("");
+  return new RegExp(`^${source}$`, "i");
+}
+
+// First target whose pattern matches the full path, or undefined.
+export function matchTarget(targets: Target[], fullPath: string): Target | undefined {
+  return targets.find((t) => globToRegExp(t.pattern).test(fullPath));
+}
+
+// Groups whose membership is inherited from a selected ancestor with at least
+// the same role need no membership of their own.
+export function topmostGroups<T extends { path: string; target: Target }>(selected: T[]): T[] {
+  const byPath = new Map(selected.map((s) => [s.path.toLowerCase(), s]));
+  return selected.filter((s) => {
+    const parts = s.path.toLowerCase().split("/");
+    for (let i = 1; i < parts.length; i++) {
+      const ancestor = byPath.get(parts.slice(0, i).join("/"));
+      if (ancestor && ancestor.target.accessLevel >= s.target.accessLevel) return false;
+    }
+    return true;
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -284,43 +384,137 @@ async function ensureAvatar(gl: ReturnType<typeof gitlab>, userId: number, path:
   logger.info("Uploaded bot avatar", { userId });
 }
 
-async function ensureMemberships(cfg: SetupConfig, gl: ReturnType<typeof gitlab>, userId: number) {
-  let groups: Json[];
-  if (cfg.groups.length) {
-    groups = await Promise.all(
-      cfg.groups.map((path) => gl.request("GET", `/groups/${encodeURIComponent(path)}`))
-    );
-  } else {
-    groups = await gl.list("/groups?top_level_only=true&all_available=true");
-  }
-  // Skip groups pending deletion.
-  groups = groups.filter((g) => !g.marked_for_deletion_on);
+type Kind = "groups" | "projects";
+interface Resolved {
+  item: Json;
+  path: string;
+  target: Target;
+}
 
-  let added = 0;
-  for (const group of groups) {
-    let member: Json | null = null;
+// Groups/projects matching the targets, minus those pending deletion and
+// archived projects. Plain paths are fetched directly; any glob lists the
+// whole instance (the admin token sees everything).
+async function resolveTargets(gl: ReturnType<typeof gitlab>, kind: Kind, targets: Target[]): Promise<Resolved[]> {
+  if (!targets.length) return [];
+  const pathOf = (item: Json): string => (kind === "groups" ? item.full_path : item.path_with_namespace);
+
+  let items: Json[] = [];
+  if (targets.some((t) => isGlob(t.pattern))) {
+    items = await gl.list(kind === "groups" ? "/groups?all_available=true" : "/projects?archived=false");
+  } else {
+    for (const t of targets) {
+      try {
+        items.push(await gl.request("GET", `/${kind}/${encodeURIComponent(t.pattern)}`));
+      } catch (e) {
+        if (!(e instanceof GitLabError && e.status === 404)) throw e;
+        logger.warn(`${kind === "groups" ? "Group" : "Project"} not found, skipping`, { path: t.pattern });
+      }
+    }
+  }
+
+  const seen = new Set<number>();
+  const resolved: Resolved[] = [];
+  for (const item of items) {
+    if (seen.has(item.id) || item.marked_for_deletion_on || item.marked_for_deletion_at || item.archived) continue;
+    seen.add(item.id);
+    const path = pathOf(item);
+    const target = matchTarget(targets, path);
+    if (target) resolved.push({ item, path, target });
+  }
+  return resolved;
+}
+
+// Adds the bot or raises its role, never lowers it: an admin may have granted
+// more on purpose. An inherited role that is high enough is left alone (GitLab
+// also rejects a direct membership below an inherited one).
+async function ensureMember(
+  gl: ReturnType<typeof gitlab>,
+  kind: Kind,
+  id: number,
+  path: string,
+  userId: number,
+  accessLevel: number
+): Promise<boolean> {
+  const get = async (suffix: string): Promise<Json | null> => {
     try {
-      member = await gl.request("GET", `/groups/${group.id}/members/${userId}`);
+      return await gl.request("GET", `/${kind}/${id}/members/${suffix}`);
     } catch (e) {
       if (!(e instanceof GitLabError && e.status === 404)) throw e;
+      return null;
     }
+  };
+  const context = { [kind === "groups" ? "group" : "project"]: path, accessLevel };
 
-    if (!member) {
-      await gl.request("POST", `/groups/${group.id}/members`, {
-        user_id: userId,
-        access_level: cfg.bot.accessLevel,
-      });
-      added++;
-      logger.info("Added bot to group", { group: group.full_path, accessLevel: cfg.bot.accessLevel });
-    } else if (member.access_level < cfg.bot.accessLevel) {
-      // Raise, never lower: an admin may have granted more on purpose.
-      await gl.request("PUT", `/groups/${group.id}/members/${userId}`, {
-        access_level: cfg.bot.accessLevel,
-      });
-      logger.info("Raised bot access level", { group: group.full_path, accessLevel: cfg.bot.accessLevel });
-    }
+  const effective = await get(`all/${userId}`);
+  if (effective && effective.access_level >= accessLevel) return false;
+
+  if (await get(`${userId}`)) {
+    await gl.request("PUT", `/${kind}/${id}/members/${userId}`, { access_level: accessLevel });
+    logger.info("Raised bot access level", context);
+    return false;
+  }
+  await gl.request("POST", `/${kind}/${id}/members`, { user_id: userId, access_level: accessLevel });
+  logger.info(`Added bot to ${kind === "groups" ? "group" : "project"}`, context);
+  return true;
+}
+
+async function ensureMemberships(cfg: SetupConfig, gl: ReturnType<typeof gitlab>, userId: number) {
+  const groups = topmostGroups(await resolveTargets(gl, "groups", cfg.groups));
+  let added = 0;
+  for (const { item, path, target } of groups) {
+    if (await ensureMember(gl, "groups", item.id, path, userId, target.accessLevel)) added++;
   }
   logger.info("Group memberships in sync", { groups: groups.length, added });
+}
+
+// One failing project (e.g. missing permissions) must not stop the others or
+// the token rotation that follows.
+async function ensureProjects(cfg: SetupConfig, gl: ReturnType<typeof gitlab>, userId: number) {
+  const projects = await resolveTargets(gl, "projects", cfg.projects);
+  let added = 0;
+  let failed = 0;
+  for (const { item, path, target } of projects) {
+    try {
+      if (await ensureMember(gl, "projects", item.id, path, userId, target.accessLevel)) added++;
+      await ensureProjectHook(cfg, gl, item.id, path, target);
+    } catch (e) {
+      failed++;
+      logger.warn("Could not set up project", { project: path, error: e instanceof Error ? e.message : e });
+    }
+  }
+  logger.info("Projects in sync", { projects: projects.length, added, failed });
+}
+
+async function ensureProjectHook(
+  cfg: SetupConfig,
+  gl: ReturnType<typeof gitlab>,
+  projectId: number,
+  path: string,
+  target: Target
+) {
+  const hooks = await gl.list(`/projects/${projectId}/hooks`);
+  const existing = hooks.find((h) => h.name === HOOK_NAME) || hooks.find((h) => h.url === cfg.hook.url);
+
+  // Project hooks default push_events to true; everything else to false.
+  const body = {
+    name: HOOK_NAME,
+    description: "AI agent for GitLab: comments (@mentions) and, without the system hook, merge request events",
+    url: cfg.hook.url,
+    token: cfg.hook.token,
+    note_events: true,
+    merge_requests_events: target.mergeRequestsEvents,
+    push_events: false,
+    enable_ssl_verification: cfg.hook.sslVerification,
+  };
+
+  if (existing) {
+    // The token can't be read back, so always re-send it to keep it in sync.
+    await gl.request("PUT", `/projects/${projectId}/hooks/${existing.id}`, body);
+    logger.debug("Updated project hook", { project: path, id: existing.id });
+  } else {
+    const hook = await gl.request("POST", `/projects/${projectId}/hooks`, body);
+    logger.info("Created project hook", { project: path, id: hook.id, url: cfg.hook.url });
+  }
 }
 
 async function ensureSystemHook(cfg: SetupConfig, gl: ReturnType<typeof gitlab>) {
@@ -482,6 +676,7 @@ export async function runSetup(cfg: SetupConfig) {
   const bot = await ensureBot(cfg, gl);
   await ensureMemberships(cfg, gl, bot.id);
   if (cfg.hook.enabled) await ensureSystemHook(cfg, gl);
+  await ensureProjects(cfg, gl, bot.id);
   const restarted = await ensureBotToken(cfg, gl, bot.id);
   if (!restarted) await ensureDeploymentConfig(cfg);
   logger.info("GitLab setup complete", { bot: cfg.bot.username });

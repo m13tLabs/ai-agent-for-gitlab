@@ -8,4 +8,9 @@ secrets:
   webhookSecret: ci-webhook-secret
 gitlabSetup:
   enabled: true
-  groups: [team-a, team-b]
+  groups: [team-a, "team-b/*"]
+  projects:
+    - "team-a/*"
+    - path: other/app
+      accessLevel: 40
+      mergeRequestsEvents: true

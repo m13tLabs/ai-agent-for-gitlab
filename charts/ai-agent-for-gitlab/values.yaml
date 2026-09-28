@@ -69,16 +69,17 @@ secrets:
 # Automated GitLab setup. When enabled, a Job (on every install/upgrade) and a
 # CronJob, both using secrets.gitlabAdminToken:
 #   - create the bot (gitlab.aiUsername) as a service account and set its avatar
-#   - add it with accessLevel to every top-level group (or just `groups`); the
-#     CronJob picks up groups created later
+#   - add it with accessLevel to the groups matching `groups`
 #   - register a system hook sending merge request events to this release's
 #     Service, so reviewer/assignee requests work on every project
+#   - for each project matching `projects`: add the bot as member and create a
+#     project webhook with comment events, so @mentions work (system hooks
+#     can't send comment events)
 #   - create the bot's access token and store it in the Secret
 #     <fullname>-bot-token, which the webhook pods read as GITLAB_TOKEN
 #     (secrets.gitlabToken is ignored); rotated before expiry
-# System hooks can't send comment events: @mentions still need a project or
-# group webhook with "Comments" enabled. `helm uninstall` leaves the bot, its
-# memberships, the system hook and the bot-token Secret in place.
+# The CronJob picks up groups and projects created later. `helm uninstall`
+# leaves the bot, its memberships, the hooks and the bot-token Secret in place.
 gitlabSetup:
   # -- Enable the automated GitLab setup (requires secrets.gitlabAdminToken)
   enabled: false
@@ -89,25 +90,42 @@ gitlabSetup:
   botName: AI Agent
   # -- Upload the bundled bot avatar (files/bot-avatar.png) as the bot's avatar
   avatar: true
-  # -- Role in each group: 30 = Developer, 40 = Maintainer
+  # -- Default bot role in each group/project: 30 = Developer, 40 = Maintainer.
+  # Roles are only raised, never lowered.
   accessLevel: 30
-  # -- Full paths of the groups to join; empty = every top-level group
-  groups: []
+  # -- Groups to add the bot to. Each entry is a full path or glob pattern
+  # (`*` and `?`, case-insensitive; `*` also matches `/`), or an object
+  # `{path: <pattern>, accessLevel: <role>}`; the first matching entry wins.
+  # A group is skipped when a selected ancestor already grants at least the
+  # same role, so `["*"]` = every group, but only top-level groups get a
+  # membership. `[]` = no groups. Groups marked for deletion are skipped.
+  groups: ["*"]
+  # -- Projects to add the bot to and give a project webhook (comment events,
+  # needed for @mentions). Same pattern rules as `groups`, matched against the
+  # project's full path; objects also take `mergeRequestsEvents` (default: true
+  # only when systemHook.enabled is false, since both hooks would trigger every
+  # review twice). `["*"]` = every project, `[]` = none. The bot membership is
+  # skipped when an inherited role is already high enough; archived projects
+  # and projects marked for deletion are skipped. Each CronJob run makes about
+  # three API calls per project, so narrow this on large instances, e.g.
+  # `["my-group/*", {path: "other/app", accessLevel: 40}]`.
+  projects: ["*"]
   systemHook:
     # -- Register the merge request system hook
     enabled: true
-    # -- URL GitLab posts to; empty = this release's in-cluster Service
+    # -- URL GitLab posts to, for the system hook and the project webhooks;
+    # empty = this release's in-cluster Service
     # (http://<fullname>.<namespace>.svc.cluster.local:<service.port>/webhook).
     # Use the ingress URL when GitLab runs outside the cluster.
     url: ""
-    # -- Verify TLS when GitLab calls the hook URL
+    # -- Verify TLS when GitLab calls the hook URL (system hook and project webhooks)
     sslVerification: true
   token:
     # -- Lifetime of the bot token in days
     expiryDays: 90
     # -- Rotate the bot token this many days before it expires
     renewBeforeDays: 14
-  # -- CronJob schedule for re-syncing (new groups, token rotation)
+  # -- CronJob schedule for re-syncing (new groups/projects, token rotation)
   schedule: "17 * * * *"
   resources:
     requests:

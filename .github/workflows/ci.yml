@@ -24,8 +24,9 @@ jobs:
       image_name: ai-agent-for-gitlab-app
       context: gitlab-app
       dockerhub: true
-      # BATS suite against the freshly built image, see test/gitlab-app.bats.
-      smoke_test: npx --yes bats@1.13.0 test/gitlab-app.bats
+      # BATS suites against the freshly built image, see test/gitlab-app.bats
+      # and test/gitlab-setup.bats.
+      smoke_test: npx --yes bats@1.13.0 test/gitlab-app.bats test/gitlab-setup.bats
     secrets: inherit
 
   agent-image:
