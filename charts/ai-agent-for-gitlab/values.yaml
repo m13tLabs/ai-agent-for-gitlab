@@ -135,8 +135,9 @@ gitlabSetup:
       memory: 256Mi
 
 agent:
-  # -- Mention that triggers the agent in comments
-  triggerPhrase: "@ai"
+  # -- Mention that triggers the agent in comments. Empty = `@<gitlab.aiUsername>`
+  # when gitlabSetup.enabled (the account it creates), else `@ai`.
+  triggerPhrase: ""
   # -- opencode model in provider/model form
   model: azure/gpt-4.1
   # -- Base prompt for the agent (OPENCODE_AGENT_PROMPT)

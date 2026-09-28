@@ -22,7 +22,7 @@ GitLab webhook middleware that triggers AI agent pipelines on @ai mentions and w
 | agent.runnerProject | string | `""` | Central project (full path or id) that runs every agent pipeline, so the other projects need no .gitlab-ci.yml changes; see the agent-runner CI/CD component in templates/. Empty = run in each project's own pipeline. |
 | agent.runnerRef | string | `""` | Branch of the runner project to run the pipelines on; empty = its default branch |
 | agent.startReactionEmoji | string | `"robot"` | Emoji awarded when a run starts |
-| agent.triggerPhrase | string | `"@ai"` | Mention that triggers the agent in comments |
+| agent.triggerPhrase | string | `""` | Mention that triggers the agent in comments. Empty = `@<gitlab.aiUsername>` when gitlabSetup.enabled (the account it creates), else `@ai`. |
 | agentImage | object | `{"repository":"m13t/ai-agent-for-gitlab-agent","tag":"0.5.0"}` | Image the CI job uses to run the agent, forwarded to pipelines as AI_AGENT_IMAGE=<repository>:<tag>. Pipeline variables override the default in .gitlab-ci.yml, so every project uses this image. Set repository to "" to keep each project's own AI_AGENT_IMAGE. |
 | agentImage.tag | string | `"0.5.0"` | Set to the release version by each release (scripts/pin-release-version.sh). "" falls back to .Chart.AppVersion. |
 | extraEnv | list | `[]` | Extra environment variables for the middleware container |

@@ -99,6 +99,20 @@ passed through unchanged.
 {{- end }}
 {{- end }}
 
+{{/*
+Trigger phrase (TRIGGER_PHRASE): agent.triggerPhrase when set, otherwise
+@<gitlab.aiUsername> when gitlabSetup creates that account, else @ai.
+*/}}
+{{- define "ai-agent.triggerPhrase" -}}
+{{- if .Values.agent.triggerPhrase }}
+{{- .Values.agent.triggerPhrase }}
+{{- else if .Values.gitlabSetup.enabled }}
+{{- printf "@%s" (required "gitlab.aiUsername is required" .Values.gitlab.aiUsername) }}
+{{- else }}
+{{- "@ai" }}
+{{- end }}
+{{- end }}
+
 {{- define "ai-agent.redisEnabled" -}}
 {{- if and .Values.rateLimiting.enabled .Values.redis.enabled }}true{{- end }}
 {{- end }}

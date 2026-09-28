@@ -111,10 +111,17 @@ export async function triggerPipeline(
         ref,
         mrIid,
       });
+      // `message` can be validation errors, e.g. {base: ["You do not have sufficient permission ..."]}
+      const message = responseData.message || responseData.error;
       throw new Error(
-        responseData.message ||
-          responseData.error ||
-          `Pipeline creation failed: ${response.statusText}`
+        typeof message === "string"
+          ? message
+          : message
+            ? Object.values(message)
+                .flat()
+                .map((m) => (typeof m === "string" ? m : JSON.stringify(m)))
+                .join("; ")
+            : `Pipeline creation failed: ${response.statusText}`
       );
     }
 
@@ -472,6 +479,59 @@ export async function getDiscussionThread(params: {
       discussionId,
     });
     return [];
+  }
+}
+
+// Tells the user in GitLab why the agent didn't start: a reply in the
+// triggering comment's thread, or a note on the MR/issue when there is no
+// thread (reviewer/assignee triggers). Non-critical, like the reactions.
+export async function postErrorNote(params: {
+  projectId: number;
+  mrIid?: number;
+  issueIid?: number;
+  discussionId?: string;
+  error: unknown;
+}): Promise<void> {
+  const { projectId, mrIid, issueIid, discussionId } = params;
+  if (!mrIid && !issueIid) return;
+
+  const reason = (params.error instanceof Error ? params.error.message : String(params.error)).slice(0, 1000);
+  const body = `:warning: The AI agent could not be started:\n\n\`\`\`\n${reason}\n\`\`\``;
+  const resource = mrIid ? `merge_requests/${mrIid}` : `issues/${issueIid}`;
+  const path = discussionId
+    ? `/api/v4/projects/${projectId}/${resource}/discussions/${discussionId}/notes`
+    : `/api/v4/projects/${projectId}/${resource}/notes`;
+
+  try {
+    const gitlabUrl = process.env.GITLAB_URL || "https://gitlab.com";
+    const res = await fetch(`${gitlabUrl}${path}`, {
+      method: "POST",
+      headers: {
+        "PRIVATE-TOKEN": process.env.GITLAB_TOKEN!,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ body }),
+    });
+
+    if (!res.ok) {
+      logger.warn("Failed to post error note", {
+        projectId,
+        mrIid,
+        issueIid,
+        discussionId,
+        status: res.status,
+        body: await res.text(),
+      });
+      return;
+    }
+    logger.info("Error note posted", { projectId, mrIid, issueIid, discussionId });
+  } catch (error) {
+    logger.warn("Error posting error note", {
+      error: error instanceof Error ? error.message : error,
+      projectId,
+      mrIid,
+      issueIid,
+    });
   }
 }
 

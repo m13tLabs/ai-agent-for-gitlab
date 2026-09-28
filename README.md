@@ -173,6 +173,7 @@ Setup:
 Notes:
 
 - The bot behind `GITLAB_TOKEN` needs Developer access to every target project. `gitlabSetup` grants it.
+- The bot must also be allowed to run pipelines on the runner project's branch (`AI_RUNNER_REF`, default: its default branch). Otherwise GitLab answers `You do not have sufficient permission to run a pipeline on 'main'`. On a protected branch that takes Maintainer, or a push/merge rule that includes the bot. Alternatively, run on an unprotected branch such as `agent-runs`; with the chart that's `agent.runnerProject` plus `agent.runnerRef: agent-runs`. To have `gitlabSetup` add the membership, list the runner project under `gitlabSetup.projects`, e.g. `{path: ai/agent-runner, accessLevel: 40}`.
 - The runner mode needs an agent image that reads `AI_PROJECT_ID`, i.e. from the same release as the webhook app. An older one would work on the runner project instead of the target.
 - The component sets `workflow:` so that only the webhook's pipelines run, and turns GitLab's *auto-cancel redundant pipelines* off. All agent pipelines share one branch there, so auto-cancel would stop runs for other projects. The webhook app cancels only older runs for the same project and branch (`CANCEL_OLD_PIPELINES`).
 - The pipeline variables in the runner project contain the prompts and discussion excerpts of every target project. Keep its membership small.
@@ -328,7 +329,7 @@ Common chart values:
 | `secrets.gitlabAdminToken` | `""` | GitLab admin token for `gitlabSetup` (only mounted into the setup Job/CronJob) |
 | `secrets.secretKeyRefs.<token>.name` / `.key` | `""` | Take a single token (`gitlabToken`, `webhookSecret`, `adminToken`, `gitlabAdminToken`) from another existing Secret, e.g. `gitlabToken: {name: gitlab-token, key: token}`; the chart Secret still holds the others. An empty `key` falls back to `secrets.keys.<token>` |
 | `gitlabSetup.enabled`, `.groups`, `.projects`, `.accessLevel`, `.systemHook.url`, `.schedule` | `false`, `["*"]`, `["*"]`, `30`, in-cluster Service, hourly | [Automated GitLab setup](#automated-gitlab-setup-optional) |
-| `agent.triggerPhrase`, `agent.model`, `agent.prompt` | `@ai`, `azure/gpt-4.1`, `""` | `TRIGGER_PHRASE`, `OPENCODE_MODEL`, `OPENCODE_AGENT_PROMPT` |
+| `agent.triggerPhrase`, `agent.model`, `agent.prompt` | `@<gitlab.aiUsername>` with `gitlabSetup.enabled`, else `@ai`; `azure/gpt-4.1`; `""` | `TRIGGER_PHRASE`, `OPENCODE_MODEL`, `OPENCODE_AGENT_PROMPT` |
 | `review.onAssignment`, `review.onAssignee`, `review.prompt` | `true`, `true`, `""` | Reviewer/assignee triggered reviews |
 | `rateLimiting.enabled`, `.max`, `.window` | `true`, `3`, `900` | Rate limiting; when disabled no Redis is deployed |
 | `redis.enabled`, `redis.externalUrl`, `redis.persistence.enabled` | `true`, `""`, `false` | Bundled Redis, or set `enabled: false` + `externalUrl` for a managed one |

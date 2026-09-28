@@ -10,6 +10,7 @@ import {
   addReactionToNote,
   addReactionToMergeRequest,
   getDiscussionThread,
+  postErrorNote,
 } from "./gitlab.ts";
 import { limitByUser } from "./limiter.ts";
 import { logger } from "./logger.ts";
@@ -284,6 +285,9 @@ app.post("/webhook", async (c) => {
         projectId: mrBody.project?.id,
         mrIid: mrBody.object_attributes?.iid,
       });
+      if (mrBody.project?.id && mrBody.object_attributes?.iid) {
+        await postErrorNote({ projectId: mrBody.project.id, mrIid: mrBody.object_attributes.iid, error });
+      }
       return c.json({ error: "Failed to trigger pipeline" }, 500);
     }
   }
@@ -380,6 +384,7 @@ app.post("/webhook", async (c) => {
         issueIid,
         error: error instanceof Error ? error.message : error,
       });
+      await postErrorNote({ projectId, issueIid, discussionId, error });
 
       // Don't fall back to main - fail the request
       return c.text("branch-creation-failed", 500);
@@ -518,6 +523,13 @@ app.post("/webhook", async (c) => {
       error: error instanceof Error ? error.message : error,
       projectId,
       ref,
+    });
+    await postErrorNote({
+      projectId,
+      mrIid: mrIid ?? undefined,
+      issueIid: issueIid ?? undefined,
+      discussionId,
+      error,
     });
     return c.json({ error: "Failed to trigger pipeline" }, 500);
   }
