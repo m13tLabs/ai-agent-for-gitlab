@@ -2,8 +2,8 @@
 # MCP server). It only ever runs as a CI job on GitLab runners, never as a
 # long-lived container, so it has no entrypoint/healthcheck of its own.
 #
-# .NET 8 SDK (official Microsoft image) + Node.js 24 LTS copied in from the
-# official node image - both Debian 12, so the node binary runs as-is.
+# .NET SDK (official Microsoft image, Ubuntu 26.04) + Node.js 24 LTS copied in
+# from the official node image (Debian 12; its glibc is older, so the binary runs as-is).
 # renovate: datasource=docker depName=node versioning=docker
 FROM node:24.21.0-bookworm-slim AS node
 
@@ -23,6 +23,24 @@ LABEL org.opencontainers.image.authors='Martin Reinhardt (martin@m13t.de)' \
     org.opencontainers.image.source='https://github.com/m13tLabs/ai-agent-for-gitlab.git' \
     org.opencontainers.image.licenses='MIT'
 
+# Ubuntu 26.04 ships uutils (Rust) coreutils: its multicall `env` rejects the
+# argv[0] QEMU hands it when arm64 is built emulated, which breaks every
+# `#!/usr/bin/env node` shebang (npm, npx, opencode, ...). Swap in GNU coreutils
+# first, before anything below execs through `env`.
+# git for committing/pushing, curl/jq/unzip for diagnostics and agent tools.
+# Versions follow the Ubuntu release the base image tracks.
+# hadolint ignore=DL3008
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends --allow-remove-essential \
+      coreutils-from-gnu \
+      coreutils-from-uutils- \
+      git \
+      curl \
+      jq \
+      unzip \
+      ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
 # Node.js + npm/npx/corepack. npm's global bin symlinks aren't copied, so
 # recreate the ones we invoke.
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
@@ -31,18 +49,6 @@ RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
  && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
  && ln -s ../lib/node_modules/corepack/dist/corepack.js /usr/local/bin/corepack \
  && node --version && npm --version
-
-# git for committing/pushing, curl/jq/unzip for diagnostics and agent tools.
-# Versions follow the Debian release the base image tracks.
-# hadolint ignore=DL3008
-RUN apt-get update \
- && apt-get install -y --no-install-recommends \
-      git \
-      curl \
-      jq \
-      unzip \
-      ca-certificates \
- && rm -rf /var/lib/apt/lists/*
 
 # opencode CLI (server support, multi-provider models). Pinned here so
 # Renovate's Dockerfile _VERSION manager bumps it.
