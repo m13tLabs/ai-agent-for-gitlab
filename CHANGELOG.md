@@ -1,4 +1,17 @@
 
+## [0.3.2](https://github.com/m13tLabs/ai-agent-for-gitlab/compare/v0.3.0...v0.3.2) (2026-09-28)
+
+### Bug Fixes
+
+* **Helm:** Correcting duplicate label error ([2ae53cc](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/2ae53ccc7a9a7799c87d9aef3db714a60cf37d12))
+
+* **Deployment:** Re-Deploy on value changes ([a86853a](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/a86853a521601df0ce1473f876cef9f75b76f440))
+
+* **Giltab:** Fix arm build for agent image ([41c55d3](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/41c55d3038c0443107c75293f23e4bf1cf228f14))
+
+
+
+
 ## [0.3.1](https://github.com/m13tLabs/ai-agent-for-gitlab/compare/v0.3.0...v0.3.1) (2026-09-26)
 
 ### Bug Fixes
