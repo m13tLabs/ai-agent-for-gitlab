@@ -1,4 +1,21 @@
 
+## [0.6.0](https://github.com/m13tLabs/ai-agent-for-gitlab/compare/v0.5.0...v0.6.0) (2026-09-28)
+
+### Dependency Updates
+
+* **deps:** Update dependency hono to v4.13.10 ([bc0a191](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/bc0a1915d577c914b94fa34f99b699e2dbc1cf5e))
+
+
+
+### Features
+
+* **Gitlab:** Improve error handling ([80eea3d](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/80eea3d220e8545676ecf0f578ecd05e9d3b6f9f))
+
+* **OpenCode:** Allow to disable model fetch ([44cf900](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/44cf900a683897894c39709a4ea9c70a6ed4c39d))
+
+
+
+
 ## [0.5.0](https://github.com/m13tLabs/ai-agent-for-gitlab/compare/v0.3.0...v0.5.0) (2026-09-28)
 
 ### Bug Fixes
