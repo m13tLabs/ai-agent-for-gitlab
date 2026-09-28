@@ -1,4 +1,35 @@
 
+## [0.5.0](https://github.com/m13tLabs/ai-agent-for-gitlab/compare/v0.3.0...v0.5.0) (2026-09-28)
+
+### Bug Fixes
+
+* **Helm:** Correcting duplicate label error ([2ae53cc](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/2ae53ccc7a9a7799c87d9aef3db714a60cf37d12))
+
+* **Deployment:** Re-Deploy on value changes ([a86853a](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/a86853a521601df0ce1473f876cef9f75b76f440))
+
+* **Giltab:** Fix arm build for agent image ([41c55d3](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/41c55d3038c0443107c75293f23e4bf1cf228f14))
+
+
+
+### Dependency Updates
+
+* **deps:** Update dependency opencode-ai to v1.18.33 ([2a44429](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/2a444293ab857d5cf5856bd16259c233c930cc67))
+
+
+
+### Features
+
+* **Gitlab:** Ignore avatar failures ([429c53d](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/429c53d647de1f331e702f6d20432c62cbed7642))
+
+* **Gitlab:** Allow to provision project webhooks ([411ad0d](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/411ad0dc2161d5b2a4748471d7eb18c1cf4c73f6))
+
+* **Gitlab:** Improve setup handling ([35c60b9](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/35c60b9f9248aee548a984ae40961f8b0014136b))
+
+* Adding Gitlab CI/CD component ([d1cf66b](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/d1cf66be64dc6b94abab813a3344fe1fd3e87f7b))
+
+
+
+
 ## [0.4.0](https://github.com/m13tLabs/ai-agent-for-gitlab/compare/v0.3.0...v0.4.0) (2026-09-28)
 
 ### Bug Fixes
