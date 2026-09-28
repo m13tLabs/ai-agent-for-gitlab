@@ -73,6 +73,8 @@ RUN npm ci --omit=dev --no-audit --no-fund \
 
 # `ai-runner` launcher; `$@` must reach the script unexpanded, hence single quotes.
 # Without the models fetch, opencode uses the build-time catalog (see above).
+# The script's variables must expand when a job runs, not at build time.
+# hadolint ignore=SC2016
 RUN printf '%s\n' '#!/usr/bin/env sh' \
       'case "${OPENCODE_DISABLE_MODELS_FETCH:-}" in true|1) export OPENCODE_MODELS_PATH="${OPENCODE_MODELS_PATH:-/opt/opencode-models.json}" ;; esac' \
       'exec node /opt/agent/ai-runner.js "$@"' > /usr/local/bin/ai-runner \

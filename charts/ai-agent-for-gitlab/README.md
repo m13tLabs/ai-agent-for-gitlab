@@ -17,6 +17,7 @@ GitLab webhook middleware that triggers AI agent pipelines on @ai mentions and w
 | affinity | object | `{}` |  |
 | agent.branchPrefix | string | `"ai"` | Prefix for branches created for issues |
 | agent.cancelOldPipelines | bool | `true` | Cancel older pending pipelines on the same ref |
+| agent.disableModelsFetch | bool | `false` | Stop opencode in the agent jobs from fetching its model catalog (OPENCODE_DISABLE_MODELS_FETCH); it then uses the catalog baked into the agent image at build time. For air-gapped runners. |
 | agent.model | string | `"azure/gpt-4.1"` | opencode model in provider/model form |
 | agent.prompt | string | `""` | Base prompt for the agent (OPENCODE_AGENT_PROMPT) |
 | agent.runnerProject | string | `""` | Central project (full path or id) that runs every agent pipeline, so the other projects need no .gitlab-ci.yml changes; see the agent-runner CI/CD component in templates/. Empty = run in each project's own pipeline. |
