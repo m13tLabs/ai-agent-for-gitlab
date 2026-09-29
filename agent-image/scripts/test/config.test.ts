@@ -31,7 +31,7 @@ describe("validateConfig", () => {
   });
 
   for (const [name, message] of [
-    ["GITLAB_TOKEN", /Missing GITLAB_TOKEN/],
+    ["GITLAB_TOKEN", /Missing GITLAB_AI_AGENT_TOKEN \(or GITLAB_TOKEN\)/],
     ["AI_PROJECT_ID", /Missing AI_PROJECT_ID/],
     ["AI_PROJECT_PATH", /Missing project path/],
     ["OPENCODE_MODEL", /Missing OPENCODE_MODEL/],

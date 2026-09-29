@@ -21,7 +21,7 @@ export function validateProviderKeys(env: Env = process.env): boolean {
 }
 
 export function validateConfig(context: Context, env: Env = process.env): void {
-  if (!context.gitlabToken) throw new Error("Missing GITLAB_TOKEN environment variable");
+  if (!context.gitlabToken) throw new Error("Missing GITLAB_AI_AGENT_TOKEN (or GITLAB_TOKEN) environment variable");
   if (!context.projectId) throw new Error("Missing AI_PROJECT_ID (or CI_PROJECT_ID) environment variable");
 
   if (!context.projectPath) {

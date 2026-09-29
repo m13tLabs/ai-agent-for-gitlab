@@ -272,3 +272,21 @@ central_run() {
   assert_output_contains 'component: $CI_SERVER_FQDN/infra/components/ai-agent/agent-runner@develop'
   assert_output_lacks 'component: $CI_SERVER_FQDN/ai/ai-agent-for-gitlab/'
 }
+
+@test "central pipeline: the bot token becomes the runner project's masked GITLAB_AI_AGENT_TOKEN variable" {
+  run central_run
+  [ "$status" -eq 0 ]
+  assert_output_contains "OK"
+  assert_output_contains 'POST /api/v4/projects/32/variables {"key":"GITLAB_AI_AGENT_TOKEN","value":"stored-bot-token","masked":true,"protected":false,"raw":true,"variable_type":"env_var","description":"Access token of the AI agent bot @review-agent for the agent jobs. Managed and rotated by the ai-agent-for-gitlab setup Job; edits are overwritten."}'
+}
+
+@test "central pipeline: a stale GITLAB_AI_AGENT_TOKEN is updated, a current one left alone" {
+  run central_run -e MOCK_TOKEN_VAR=stale
+  [ "$status" -eq 0 ]
+  assert_output_contains 'PUT /api/v4/projects/32/variables/GITLAB_AI_AGENT_TOKEN {"value":"stored-bot-token"'
+
+  run central_run -e MOCK_TOKEN_VAR=current
+  [ "$status" -eq 0 ]
+  assert_output_contains "OK"
+  assert_output_lacks "/api/v4/projects/32/variables"
+}

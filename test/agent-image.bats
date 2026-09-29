@@ -70,10 +70,10 @@ in_image() {
   assert_output "1"
 }
 
-@test "ai-runner fails fast without GITLAB_TOKEN" {
+@test "ai-runner fails fast without GITLAB_AI_AGENT_TOKEN / GITLAB_TOKEN" {
   run in_image 'cd /tmp && ai-runner'
   [ "$status" -ne 0 ]
-  assert_output_contains "Missing GITLAB_TOKEN"
+  assert_output_contains "Missing GITLAB_AI_AGENT_TOKEN (or GITLAB_TOKEN)"
 }
 
 @test "ai-runner fails fast for an Azure model without AZURE_RESOURCE_NAME" {

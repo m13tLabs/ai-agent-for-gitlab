@@ -23,7 +23,9 @@ export function buildContext(env: Env = process.env): Context {
     username: env.AI_GITLAB_USERNAME,
     opencodeModel: env.OPENCODE_MODEL,
     agentPrompt: combinedPrompt,
-    gitlabToken: env.GITLAB_TOKEN,
+    // GITLAB_AI_AGENT_TOKEN: the bot token gitlabSetup maintains on the runner
+    // project; GITLAB_TOKEN: a hand-made CI/CD variable (per-project mode).
+    gitlabToken: env.GITLAB_AI_AGENT_TOKEN || env.GITLAB_TOKEN,
     host: env.CI_SERVER_HOST || "gitlab.com",
     // AI_PROJECT_ID is the target project, also when the pipeline runs in a
     // central runner project; CI_PROJECT_ID covers pipelines from older webhooks.

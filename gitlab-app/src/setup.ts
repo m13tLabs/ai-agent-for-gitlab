@@ -714,9 +714,8 @@ export function runnerReadme(cfg: SetupConfig, componentPath = cfg.centralPipeli
 Runs the [AI agent for GitLab](${sourceLink(cp.cloneUrl)}) for every project (runner mode). The webhook app starts one pipeline here per \`@${cfg.bot.username}\` mention or review request and passes the target project as pipeline variables (\`AI_PROJECT_ID\`, \`AI_PROJECT_PATH\`, \`AI_BRANCH\`). The agent clones that project itself, so the projects need no CI changes.
 
 - \`.gitlab-ci.yml\` includes the \`${COMPONENT_NAME}\` CI/CD component from [${componentPath}](${cfg.gitlabUrl}/${componentPath}). ${MANAGED_NOTE}: edits to it are overwritten; set the component inputs in the Helm values instead.
-- Add these CI/CD variables here (Settings → CI/CD → Variables, not protected), or let a dedicated runner inject them:
-  - \`GITLAB_TOKEN\`: a token of @${cfg.bot.username}
-  - the provider keys of the model, e.g. \`ANTHROPIC_API_KEY\`, or \`AWS_ACCESS_KEY_ID\`, \`AWS_SECRET_ACCESS_KEY\` and \`AWS_REGION\` for Amazon Bedrock
+- CI/CD variable \`GITLAB_AI_AGENT_TOKEN\` (Settings → CI/CD → Variables): the token of @${cfg.bot.username} the agent jobs use. The setup Job creates it and updates it whenever it rotates the token; don't edit it.
+- Add the provider keys of the model here as CI/CD variables (not protected), or let a dedicated runner inject them: e.g. \`ANTHROPIC_API_KEY\`, or \`AWS_ACCESS_KEY_ID\`, \`AWS_SECRET_ACCESS_KEY\` and \`AWS_REGION\` for Amazon Bedrock.
 - The pipeline variables here contain prompts and discussion excerpts of every project the agent works on. Keep this project's membership small.
 
 This README is created once and not overwritten.
@@ -942,7 +941,13 @@ async function fileContent(gl: ReturnType<typeof gitlab>, projectId: number, fil
 
 // Runner project with a .gitlab-ci.yml including the component (kept in sync,
 // or only created with initialSetupOnly) and a README (created once).
-async function ensureRunnerProject(cfg: SetupConfig, gl: ReturnType<typeof gitlab>, botId: number, component: Json) {
+async function ensureRunnerProject(
+  cfg: SetupConfig,
+  gl: ReturnType<typeof gitlab>,
+  botId: number,
+  component: Json,
+  botToken: string
+) {
   const cp = cfg.centralPipeline;
   const project =
     (await findProject(gl, cp.runnerProject)) ??
@@ -951,6 +956,7 @@ async function ensureRunnerProject(cfg: SetupConfig, gl: ReturnType<typeof gitla
       visibility: cp.visibility,
     }));
   await ensureMember(gl, "projects", project.id, cp.runnerProject, botId, OWNER);
+  await ensureTokenVariable(cfg, gl, project.id, botToken);
 
   // A new project has no branch yet; the first commit creates it.
   const branch = project.default_branch || "main";
@@ -988,6 +994,35 @@ async function ensureRunnerProject(cfg: SetupConfig, gl: ReturnType<typeof gitla
   logger.info("Updated runner project files", { project: cp.runnerProject, branch, files: actions.map((a) => a.file_path) });
 }
 
+const TOKEN_VARIABLE = "GITLAB_AI_AGENT_TOKEN";
+
+// The bot token as a masked CI/CD variable of the runner project: the agent
+// jobs authenticate with it (it wins over a GITLAB_TOKEN there). Updated when
+// the token was rotated. Not protected, so a runner ref on an unprotected
+// branch (agent.runnerRef) works too; keep the project's membership small.
+async function ensureTokenVariable(cfg: SetupConfig, gl: ReturnType<typeof gitlab>, projectId: number, token: string) {
+  const cp = cfg.centralPipeline;
+  const description =
+    `Access token of the AI agent bot @${cfg.bot.username} for the agent jobs. ` +
+    "Managed and rotated by the ai-agent-for-gitlab setup Job; edits are overwritten.";
+  const body = { value: token, masked: true, protected: false, raw: true, variable_type: "env_var", description };
+
+  let current: Json | null = null;
+  try {
+    current = await gl.request("GET", `/projects/${projectId}/variables/${TOKEN_VARIABLE}`);
+  } catch (e) {
+    if (!(e instanceof GitLabError && e.status === 404)) throw e;
+  }
+  if (!current) {
+    await gl.request("POST", `/projects/${projectId}/variables`, { key: TOKEN_VARIABLE, ...body });
+    logger.info("Created CI/CD variable", { project: cp.runnerProject, key: TOKEN_VARIABLE });
+  } else if (current.value !== token || current.description !== description || !current.masked || current.protected) {
+    // A hidden variable's value can't be read back (null): then it's re-sent.
+    await gl.request("PUT", `/projects/${projectId}/variables/${TOKEN_VARIABLE}`, body);
+    logger.info("Updated CI/CD variable", { project: cp.runnerProject, key: TOKEN_VARIABLE });
+  }
+}
+
 // Ref of the component to include, checked to exist in the component project.
 async function componentRef(cfg: SetupConfig, gl: ReturnType<typeof gitlab>, component: Json): Promise<string> {
   const cp = cfg.centralPipeline;
@@ -1007,17 +1042,22 @@ async function componentRef(cfg: SetupConfig, gl: ReturnType<typeof gitlab>, com
   return ref;
 }
 
-async function ensureCentralPipeline(cfg: SetupConfig, gl: ReturnType<typeof gitlab>, botId: number) {
+async function ensureCentralPipeline(cfg: SetupConfig, gl: ReturnType<typeof gitlab>, botId: number, botToken: string) {
   const component = await ensureComponentProject(cfg, gl, botId);
-  await ensureRunnerProject(cfg, gl, botId, component);
+  await ensureRunnerProject(cfg, gl, botId, component, botToken);
   logger.info("Central pipeline in sync", {
     component: cfg.centralPipeline.componentProject,
     runner: cfg.centralPipeline.runnerProject,
   });
 }
 
-// Returns true when a new token was stored (and the Deployment restarted).
-async function ensureBotToken(cfg: SetupConfig, gl: ReturnType<typeof gitlab>, userId: number): Promise<boolean> {
+// Returns the bot token in use, and whether it was just stored (the
+// Deployment was then restarted).
+async function ensureBotToken(
+  cfg: SetupConfig,
+  gl: ReturnType<typeof gitlab>,
+  userId: number
+): Promise<{ token: string; rotated: boolean }> {
   const k8s = kube(cfg);
   const secretPath = `/api/v1/namespaces/${cfg.kube.namespace}/secrets/${cfg.token.secretName}`;
 
@@ -1039,7 +1079,7 @@ async function ensureBotToken(cfg: SetupConfig, gl: ReturnType<typeof gitlab>, u
       const expires = self.expires_at ? Date.parse(self.expires_at) : Infinity;
       if (self.active && self.user_id === userId && expires > renewBy) {
         logger.info("Bot token still valid", { expiresAt: self.expires_at });
-        return false;
+        return { token: stored, rotated: false };
       }
       logger.info("Rotating bot token", { expiresAt: self.expires_at, active: self.active });
     } catch (e) {
@@ -1084,7 +1124,7 @@ async function ensureBotToken(cfg: SetupConfig, gl: ReturnType<typeof gitlab>, u
   await restartDeployment(cfg, k8s, "load the new token", {
     "ai-agent-for-gitlab/token-rotated-at": new Date().toISOString(),
   });
-  return true;
+  return { token: created.token, rotated: true };
 }
 
 // Restarts the Deployment when the chart's gitlab.*/secrets.* values changed
@@ -1147,11 +1187,11 @@ export async function runSetup(cfg: SetupConfig) {
   await ensureMemberships(cfg, gl, bot.id);
   if (cfg.hook.enabled) await ensureSystemHook(cfg, gl);
   await ensureProjects(cfg, gl, bot.id);
-  const restarted = await ensureBotToken(cfg, gl, bot.id);
-  if (!restarted) await ensureDeploymentConfig(cfg);
+  const botToken = await ensureBotToken(cfg, gl, bot.id);
+  if (!botToken.rotated) await ensureDeploymentConfig(cfg);
   // Last, so a failure here (e.g. a missing group) fails the Job only after
   // the token rotation is done.
-  if (cfg.centralPipeline.enabled) await ensureCentralPipeline(cfg, gl, bot.id);
+  if (cfg.centralPipeline.enabled) await ensureCentralPipeline(cfg, gl, bot.id, botToken.token);
   logger.info("GitLab setup complete", { bot: cfg.bot.username });
 }
 

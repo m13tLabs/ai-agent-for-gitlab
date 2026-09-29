@@ -1,6 +1,6 @@
 # agent-runner
 
-Runs the AI agent for every project from one central runner project (the chart's `agent.runnerProject`), so the target projects need no .gitlab-ci.yml changes. The webhook creates the pipelines through the API and passes the target as AI_PROJECT_ID / AI_PROJECT_PATH / AI_BRANCH; the agent clones it with GITLAB_TOKEN. Include it only in the dedicated runner project: it sets `workflow:`, so it would disable every other pipeline there.
+Runs the AI agent for every project from one central runner project (the chart's `agent.runnerProject`), so the target projects need no .gitlab-ci.yml changes. The webhook creates the pipelines through the API and passes the target as AI_PROJECT_ID / AI_PROJECT_PATH / AI_BRANCH; the agent clones it with GITLAB_AI_AGENT_TOKEN (or GITLAB_TOKEN). Include it only in the dedicated runner project: it sets `workflow:`, so it would disable every other pipeline there.
 
 ## Usage
 

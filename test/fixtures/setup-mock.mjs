@@ -20,6 +20,8 @@
 //            the bare file:///tmp/target.git, printed as "REFS ..." at the end.
 //            MOCK_RUNNER_EXISTS: ai/agent-runner (32) exists, with a
 //            hand-made .gitlab-ci.yml and README.md on main.
+//            MOCK_TOKEN_VAR=stale|current: the runner project already has the
+//            GITLAB_AI_AGENT_TOKEN variable, with an old or the stored token.
 //            MOCK_MIRROR_FAILS: enabling the pull mirror fails like on a
 //            GitLab without outbound access.
 //   edition  CE, or EE with MOCK_EDITION=premium (Premium license) /
@@ -103,6 +105,12 @@ function route(method, url, body) {
   }
   if (process.env.MOCK_RUNNER_EXISTS && method === "GET" && (m = path.match(/^\/api\/v4\/projects\/32\/repository\/files\/(.+)$/))) {
     return [200, { content: Buffer.from(`hand-made ${decodeURIComponent(m[1])}\n`).toString("base64") }];
+  }
+  if (method === "GET" && path === "/api/v4/projects/32/variables/GITLAB_AI_AGENT_TOKEN" && process.env.MOCK_TOKEN_VAR) {
+    const value = process.env.MOCK_TOKEN_VAR === "current" ? "stored-bot-token" : "old-token";
+    const description =
+      "Access token of the AI agent bot @review-agent for the agent jobs. Managed and rotated by the ai-agent-for-gitlab setup Job; edits are overwritten.";
+    return [200, { key: "GITLAB_AI_AGENT_TOKEN", value, masked: true, protected: false, description }];
   }
   if (method === "PUT" && process.env.MOCK_MIRROR_FAILS && JSON.parse(body).mirror) {
     return [422, { message: "Unable to access repository with the URL and credentials provided" }];

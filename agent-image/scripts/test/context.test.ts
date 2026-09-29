@@ -3,6 +3,11 @@ import assert from "node:assert/strict";
 import { buildContext } from "../src/context.ts";
 
 describe("buildContext", () => {
+  it("prefers GITLAB_AI_AGENT_TOKEN (set by gitlabSetup) over GITLAB_TOKEN", () => {
+    assert.equal(buildContext({ GITLAB_AI_AGENT_TOKEN: "bot", GITLAB_TOKEN: "manual" }).gitlabToken, "bot");
+    assert.equal(buildContext({ GITLAB_TOKEN: "manual" }).gitlabToken, "manual");
+  });
+
   it("maps the pipeline variables", () => {
     const ctx = buildContext({
       AI_PROJECT_PATH: "g/p",

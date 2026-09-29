@@ -167,7 +167,7 @@ Setup:
    ```
 
    CI/CD components can only be included from a GitLab project. On a self-managed instance, mirror this repository into it and use `$CI_SERVER_FQDN/<group>/ai-agent-for-gitlab/agent-runner@<version>`.
-2. Add `GITLAB_TOKEN` and the provider keys (see [Create Pipeline](#create-pipeline)) as CI/CD variables of the runner project, not protected. Or let a dedicated runner inject them from a Kubernetes Secret, and select it with the `tags` input.
+2. Add `GITLAB_TOKEN` (or `GITLAB_AI_AGENT_TOKEN`, which wins) and the provider keys (see [Create Pipeline](#create-pipeline)) as CI/CD variables of the runner project, not protected. Or let a dedicated runner inject them from a Kubernetes Secret, and select it with the `tags` input.
 3. Point the webhook app at it: `AI_RUNNER_PROJECT=ai/agent-runner` (chart: `agent.runnerProject`).
 
 With the Helm chart's `gitlabSetup`, steps 1 and 3 are automated by `gitlabSetup.centralPipeline`:
@@ -202,7 +202,8 @@ additionalEnvs:                             # only if the setup Job needs a prox
 - **Bot:** becomes Owner of both projects, so it can run pipelines on the runner project's protected default branch.
 - **Webhook:** `runner.project` is used as `agent.runnerProject` unless you set that yourself.
 - **Timing:** the Job pushes the source before it sets up the runner project, so both are done in the same run. A source the Job can't clone fails the setup Job with git's error and a hint about `additionalEnvs`.
-- **Still manual:** step 2, the CI/CD variables.
+- **Bot token:** the setup Job adds the bot's token to the runner project as the masked CI/CD variable `GITLAB_AI_AGENT_TOKEN`, with a description saying so, and updates it whenever it rotates the token. The agent uses it before a `GITLAB_TOKEN`. It isn't protected, so a runner ref on an unprotected branch works too; Maintainers of the runner project can see it, so keep its membership small.
+- **Still manual:** the provider keys from step 2.
 
 Notes:
 
