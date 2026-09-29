@@ -45,6 +45,7 @@ GitLab webhook middleware that triggers AI agent pipelines on @ai mentions and w
 | gitlabSetup.centralPipeline.enabled | bool | `false` | Create and maintain the component and runner projects |
 | gitlabSetup.centralPipeline.runner.extraConfig | string | `""` | Further top-level configuration for the runner project's .gitlab-ci.yml: a YAML string (kept as is) or a map. A job named like the component's `job-name` input is merged with the agent job, e.g. `{ai-review: {extends: [.proxy_setup]}}`. |
 | gitlabSetup.centralPipeline.runner.extraIncludes | list | `[]` | Further `include:` entries after the component, e.g. `[{project: infra/helpers, ref: v1.0.0, file: .gitlab-ci/include.yml}]` |
+| gitlabSetup.centralPipeline.runner.initialSetupOnly | bool | `false` | Only create the runner project's .gitlab-ci.yml when it's missing and never update it afterwards, e.g. to maintain it by hand after the first setup. The bot's Owner membership is still ensured. |
 | gitlabSetup.centralPipeline.runner.inputs | object | `{}` | Inputs for the agent-runner component, e.g. `{tags: [ai-agent]}` |
 | gitlabSetup.centralPipeline.runner.project | string | `"ai/agent-runner"` | Full path of the runner project; its group must exist |
 | gitlabSetup.centralPipeline.visibility | string | `"private"` | Visibility of both projects (private, internal or public) |

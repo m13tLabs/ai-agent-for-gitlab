@@ -158,6 +158,10 @@ gitlabSetup:
       project: ai/agent-runner
       # -- Inputs for the agent-runner component, e.g. `{tags: [ai-agent]}`
       inputs: {}
+      # -- Only create the runner project's .gitlab-ci.yml when it's missing
+      # and never update it afterwards, e.g. to maintain it by hand after the
+      # first setup. The bot's Owner membership is still ensured.
+      initialSetupOnly: false
       # -- Further `include:` entries after the component, e.g.
       # `[{project: infra/helpers, ref: v1.0.0, file: .gitlab-ci/include.yml}]`
       extraIncludes: []

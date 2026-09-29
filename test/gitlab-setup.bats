@@ -235,3 +235,32 @@ central_run() {
   run central_run -e RUNNER_EXTRA_INCLUDES='{"project":"x"}'
   assert_output_contains "FAILED: RUNNER_EXTRA_INCLUDES must be a JSON array of objects"
 }
+
+@test "central pipeline: an existing runner .gitlab-ci.yml is updated by default" {
+  run central_run -e MOCK_RUNNER_EXISTS=1
+  [ "$status" -eq 0 ]
+  assert_output_contains "OK"
+  assert_output_contains '"actions":[{"action":"update","file_path":".gitlab-ci.yml"'
+  # README exists: created once, never updated.
+  assert_output_lacks '"file_path":"README.md"'
+  assert_output_lacks 'POST /api/v4/projects {"name":"agent-runner"'
+}
+
+@test "central pipeline with initialSetupOnly: an existing runner project's files are left alone" {
+  # The ref isn't even checked when nothing is written.
+  run central_run -e MOCK_RUNNER_EXISTS=1 -e RUNNER_INITIAL_SETUP_ONLY=true -e COMPONENT_REF=v9.9.9
+  [ "$status" -eq 0 ]
+  assert_output_contains "OK"
+  assert_output_lacks "repository/commits {"
+  # Membership is still ensured.
+  assert_output_contains 'POST /api/v4/projects/32/members {"user_id":7,"access_level":50}'
+}
+
+@test "central pipeline with initialSetupOnly: a new runner project still gets its files" {
+  run central_run -e RUNNER_INITIAL_SETUP_ONLY=true
+  [ "$status" -eq 0 ]
+  assert_output_contains "OK"
+  assert_output_contains 'POST /api/v4/projects {"name":"agent-runner"'
+  assert_output_contains '"action":"create","file_path":".gitlab-ci.yml"'
+  assert_output_contains '"action":"create","file_path":"README.md"'
+}

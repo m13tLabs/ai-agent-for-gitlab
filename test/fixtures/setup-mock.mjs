@@ -18,6 +18,8 @@
 //            Git: source repo file:///tmp/source.git (branches develop = HEAD
 //            and feature, tag v0.5.0); the component project's repository is
 //            the bare file:///tmp/target.git, printed as "REFS ..." at the end.
+//            MOCK_RUNNER_EXISTS: ai/agent-runner (32) exists, with a
+//            hand-made .gitlab-ci.yml and README.md on main.
 //            MOCK_MIRROR_FAILS: enabling the pull mirror fails like on a
 //            GitLab without outbound access.
 //   edition  CE, or EE with MOCK_EDITION=premium (Premium license) /
@@ -62,6 +64,9 @@ const centralProjects = process.env.MOCK_NO_COMPONENT
       mirror: false,
       http_url_to_repo: TARGET,
     }];
+if (process.env.MOCK_RUNNER_EXISTS) {
+  centralProjects.push({ id: 32, path_with_namespace: "ai/agent-runner", default_branch: "main", http_url_to_repo: TARGET });
+}
 const edition = process.env.MOCK_EDITION || "ce";
 
 const writes = [];
@@ -95,6 +100,9 @@ function route(method, url, body) {
     } catch {
       return [404, { message: "404 Commit Not Found" }];
     }
+  }
+  if (process.env.MOCK_RUNNER_EXISTS && method === "GET" && (m = path.match(/^\/api\/v4\/projects\/32\/repository\/files\/(.+)$/))) {
+    return [200, { content: Buffer.from(`hand-made ${decodeURIComponent(m[1])}\n`).toString("base64") }];
   }
   if (method === "PUT" && process.env.MOCK_MIRROR_FAILS && JSON.parse(body).mirror) {
     return [422, { message: "Unable to access repository with the URL and credentials provided" }];

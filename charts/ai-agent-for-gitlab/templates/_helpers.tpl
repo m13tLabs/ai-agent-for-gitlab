@@ -287,6 +287,8 @@ containers:
         value: {{ required "gitlabSetup.centralPipeline.runner.project is required" .runner.project | quote }}
       - name: RUNNER_COMPONENT_INPUTS
         value: {{ .runner.inputs | default dict | toJson | quote }}
+      - name: RUNNER_INITIAL_SETUP_ONLY
+        value: {{ .runner.initialSetupOnly | toString | quote }}
       - name: RUNNER_EXTRA_INCLUDES
         value: {{ .runner.extraIncludes | default list | toJson | quote }}
       {{- with .runner.extraConfig }}

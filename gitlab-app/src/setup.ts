@@ -87,6 +87,9 @@ export interface SetupConfig {
     // entries and raw top-level YAML (e.g. `<job-name>: {extends: [...]}`).
     extraIncludes: Json[];
     extraConfig: string;
+    // Write the runner project's .gitlab-ci.yml only when it's missing, never
+    // update it afterwards (for hand-maintained runner projects).
+    initialSetupOnly: boolean;
     visibility: string;
   };
 }
@@ -201,6 +204,7 @@ export async function loadConfig(env = process.env): Promise<SetupConfig> {
       inputs,
       extraIncludes,
       extraConfig: env.RUNNER_EXTRA_CONFIG || "",
+      initialSetupOnly: env.RUNNER_INITIAL_SETUP_ONLY === "true",
       visibility: env.CENTRAL_PIPELINE_VISIBILITY || "private",
     },
   };
@@ -935,8 +939,8 @@ async function fileContent(gl: ReturnType<typeof gitlab>, projectId: number, fil
   }
 }
 
-// Runner project with a .gitlab-ci.yml including the component (kept in sync)
-// and a README (created once).
+// Runner project with a .gitlab-ci.yml including the component (kept in sync,
+// or only created with initialSetupOnly) and a README (created once).
 async function ensureRunnerProject(cfg: SetupConfig, gl: ReturnType<typeof gitlab>, botId: number, component: Json) {
   const cp = cfg.centralPipeline;
   const project =
@@ -947,6 +951,36 @@ async function ensureRunnerProject(cfg: SetupConfig, gl: ReturnType<typeof gitla
     }));
   await ensureMember(gl, "projects", project.id, cp.runnerProject, botId, OWNER);
 
+  // A new project has no branch yet; the first commit creates it.
+  const branch = project.default_branch || "main";
+  const actions: Json[] = [];
+  if ((await fileContent(gl, project.id, "README.md", branch)) === null) {
+    actions.push({ action: "create", file_path: "README.md", content: runnerReadme(cfg) });
+  }
+
+  // Decided per file, not per project: a first run that created the project
+  // but failed before its commit still gets the files on the next run.
+  const currentCi = await fileContent(gl, project.id, ".gitlab-ci.yml", branch);
+  if (currentCi !== null && cp.initialSetupOnly) {
+    logger.debug("Runner project .gitlab-ci.yml exists, leaving it alone (initialSetupOnly)", { project: cp.runnerProject });
+  } else {
+    const ci = runnerCiConfig(cp.componentProject, await componentRef(cfg, gl, component), cp.inputs, cp.extraIncludes, cp.extraConfig);
+    if (currentCi === null) actions.push({ action: "create", file_path: ".gitlab-ci.yml", content: ci });
+    else if (currentCi !== ci) actions.push({ action: "update", file_path: ".gitlab-ci.yml", content: ci });
+  }
+  if (!actions.length) return;
+
+  await gl.request("POST", `/projects/${project.id}/repository/commits`, {
+    branch,
+    commit_message: `Set up the AI agent runner (${actions.map((a) => a.file_path).join(", ")})`,
+    actions,
+  });
+  logger.info("Updated runner project files", { project: cp.runnerProject, branch, files: actions.map((a) => a.file_path) });
+}
+
+// Ref of the component to include, checked to exist in the component project.
+async function componentRef(cfg: SetupConfig, gl: ReturnType<typeof gitlab>, component: Json): Promise<string> {
+  const cp = cfg.centralPipeline;
   const ref = cp.ref || component.default_branch;
   if (!ref) throw new Error(`${cp.componentProject} has no default branch yet; set gitlabSetup.centralPipeline.component.ref`);
   // A tag the source doesn't have (e.g. v<chart appVersion> before that release
@@ -960,27 +994,7 @@ async function ensureRunnerProject(cfg: SetupConfig, gl: ReturnType<typeof gitla
         "set gitlabSetup.centralPipeline.component.ref to an existing tag or branch"
     );
   }
-
-  // A new project has no branch yet; the first commit creates it.
-  const branch = project.default_branch || "main";
-  const files = [
-    { path: ".gitlab-ci.yml", content: runnerCiConfig(cp.componentProject, ref, cp.inputs, cp.extraIncludes, cp.extraConfig), managed: true },
-    { path: "README.md", content: runnerReadme(cfg), managed: false },
-  ];
-  const actions: Json[] = [];
-  for (const file of files) {
-    const current = await fileContent(gl, project.id, file.path, branch);
-    if (current === null) actions.push({ action: "create", file_path: file.path, content: file.content });
-    else if (file.managed && current !== file.content) actions.push({ action: "update", file_path: file.path, content: file.content });
-  }
-  if (!actions.length) return;
-
-  await gl.request("POST", `/projects/${project.id}/repository/commits`, {
-    branch,
-    commit_message: `Set up the AI agent runner (${actions.map((a) => a.file_path).join(", ")})`,
-    actions,
-  });
-  logger.info("Updated runner project files", { project: cp.runnerProject, branch, files: actions.map((a) => a.file_path) });
+  return ref;
 }
 
 async function ensureCentralPipeline(cfg: SetupConfig, gl: ReturnType<typeof gitlab>, botId: number) {
