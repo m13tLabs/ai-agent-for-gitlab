@@ -4,7 +4,10 @@
 # releases do: `image.tag` / `agentImage.tag` in values.yaml and `appVersion`
 # in Chart.yaml become the release version, the chart's own `version` gets a
 # patch increment (or becomes the given chart version), and helm-docs
-# regenerates the chart README. Run by the release workflow
+# regenerates the chart README. The agent-runner CI/CD component's `version`
+# input defaults to the release version too, so `agent-runner@v<version>`
+# runs the agent image of that release; glab-docs regenerates its README.
+# Run by the release workflow
 # (docker-release.yml's `bump_command`) so the release commit points the chart
 # at the images that release publishes.
 #
@@ -14,7 +17,8 @@
 # An explicit chart version must be higher than the current one: the release
 # pushes it to an OCI registry, where an existing version would be replaced.
 #
-# helm-docs runs from PATH if installed, otherwise from its Docker image.
+# helm-docs and glab-docs run from PATH if installed, otherwise from their
+# Docker images.
 # Fails without touching a file if any expected entry isn't found.
 set -euo pipefail
 
@@ -29,7 +33,10 @@ export VERSION CHART_VERSION
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CHART="$ROOT/charts/ai-agent-for-gitlab"
+COMPONENT="$ROOT/templates/agent-runner.yml"
 HELM_DOCS_IMAGE=jnorwood/helm-docs:v1.14.2
+GLAB_DOCS_IMAGE=m13t/glab-docs:1.0.0
+COMPONENT_PREFIX=gitlab.com/m13tlabs/ai-agent-for-gitlab
 
 if [[ -n "$CHART_VERSION" ]]; then
   current="$(sed -n 's/^version: *//p' "$CHART/Chart.yaml")"
@@ -71,6 +78,20 @@ pin "$CHART/Chart.yaml" '
     or die "appVersion not found\n";
 '
 
+# The `default:` must sit inside the `version:` input under spec.inputs,
+# i.e. before the next line indented less than the input's own settings.
+pin "$COMPONENT" '
+  s/^(    version:\n(?:      .*\n)*?      default: ).*$/$1"$ENV{VERSION}"/m
+    or die "spec.inputs.version.default not found\n";
+'
+
+if command -v glab-docs >/dev/null 2>&1; then
+  (cd "$ROOT" && glab-docs --search-root templates --component-prefix "$COMPONENT_PREFIX" --documentation-strict-mode)
+else
+  docker run --rm -v "$ROOT:/w" -w /w -u "$(id -u):$(id -g)" --entrypoint glab-docs \
+    "$GLAB_DOCS_IMAGE" --search-root templates --component-prefix "$COMPONENT_PREFIX" --documentation-strict-mode
+fi
+
 if command -v helm-docs >/dev/null 2>&1; then
   (cd "$ROOT" && helm-docs --chart-search-root charts)
 else
@@ -78,4 +99,4 @@ else
     "$HELM_DOCS_IMAGE" --chart-search-root charts
 fi
 
-echo "Pinned chart to app version $VERSION, chart version $(sed -n 's/^version: //p' "$CHART/Chart.yaml")"
+echo "Pinned chart to app version $VERSION, chart version $(sed -n 's/^version: //p' "$CHART/Chart.yaml"), agent-runner component to agent image $VERSION"

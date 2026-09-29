@@ -13,10 +13,15 @@ spec:
       default: ai_webhook_handler
       description: Name of the agent job.
     image:
-      default: m13t/ai-agent-for-gitlab-agent:latest
+      default: m13t/ai-agent-for-gitlab-agent
       description: >-
-        Agent image (AI_AGENT_IMAGE). The chart's `agentImage` is passed as a
-        pipeline variable and wins over this default.
+        Agent image repository, without the tag. Together with `version` the
+        default for AI_AGENT_IMAGE; the chart's `agentImage`, passed by the
+        webhook as a pipeline variable, wins over both.
+    version:
+      default: latest
+      description: >-
+        Agent image tag, e.g. the release version (`0.5.0`). See `image`.
     tags:
       type: array
       default: []
@@ -41,7 +46,7 @@ stages:
 
 variables:
   # -- Agent image; overridden by the webhook's AI_AGENT_IMAGE pipeline variable
-  AI_AGENT_IMAGE: $[[ inputs.image ]]
+  AI_AGENT_IMAGE: "$[[ inputs.image ]]:$[[ inputs.version ]]"
 
 # -- Runs `ai-runner` against the target project given by the pipeline variables.
 "$[[ inputs.job-name ]]":

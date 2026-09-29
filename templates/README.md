@@ -9,10 +9,11 @@ include:
   - component: gitlab.com/m13tlabs/ai-agent-for-gitlab/agent-runner@<version>
     inputs:
       custom-agent-prompt: ""
-      image: m13t/ai-agent-for-gitlab-agent:latest
+      image: m13t/ai-agent-for-gitlab-agent
       job-name: ai_webhook_handler
       stage: ai
       tags: []
+      version: latest
 ```
 
 ## Inputs
@@ -20,16 +21,17 @@ include:
 | Input | Type | Default | Options | Description |
 |-------|------|---------|---------|-------------|
 | custom-agent-prompt | string | _none_ |  | Instructions appended to the agent prompt (CUSTOM_AGENT_PROMPT), for every target project. |
-| image | string | `m13t/ai-agent-for-gitlab-agent:latest` |  | Agent image (AI_AGENT_IMAGE). The chart's `agentImage` is passed as a pipeline variable and wins over this default. |
+| image | string | `m13t/ai-agent-for-gitlab-agent` |  | Agent image repository, without the tag. Together with `version` the default for AI_AGENT_IMAGE; the chart's `agentImage`, passed by the webhook as a pipeline variable, wins over both. |
 | job-name | string | `ai_webhook_handler` |  | Name of the agent job. |
 | stage | string | `ai` |  | Pipeline stage the agent job runs in. |
 | tags | array | `[]` |  | Runner tags, e.g. of a dedicated runner that injects the provider keys from a Kubernetes Secret. |
+| version | string | `latest` |  | Agent image tag, e.g. the release version (`0.5.0`). See `image`. |
 
 ## Variables
 
 | Variable | Default | Options | Description |
 |----------|---------|---------|-------------|
-| AI_AGENT_IMAGE | `$[[ inputs.image ]]` |  | Agent image; overridden by the webhook's AI_AGENT_IMAGE pipeline variable |
+| AI_AGENT_IMAGE | `$[[ inputs.image ]]:$[[ inputs.version ]]` |  | Agent image; overridden by the webhook's AI_AGENT_IMAGE pipeline variable |
 
 ## Jobs
 

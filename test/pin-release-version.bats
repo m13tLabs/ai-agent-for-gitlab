@@ -1,16 +1,18 @@
 #!/usr/bin/env bats
 #
 # Tests for scripts/pin-release-version.sh, the release's bump_command. Runs
-# on a copy of the repo's chart so the real files are never touched. Needs
-# helm and helm-docs (or Docker for the helm-docs image fallback).
+# on a copy of the repo's chart and CI/CD component so the real files are
+# never touched. Needs helm, helm-docs and glab-docs (or Docker for their
+# image fallbacks).
 
 load test_helper
 
 setup() {
   WORK="$BATS_TEST_TMPDIR/repo"
   mkdir -p "$WORK"
-  cp -R "$BATS_TEST_DIRNAME/../scripts" "$BATS_TEST_DIRNAME/../charts" "$WORK/"
+  cp -R "$BATS_TEST_DIRNAME/../scripts" "$BATS_TEST_DIRNAME/../charts" "$BATS_TEST_DIRNAME/../templates" "$WORK/"
   CHART="$WORK/charts/ai-agent-for-gitlab"
+  COMPONENT="$WORK/templates/agent-runner.yml"
   CHART_VERSION="$(sed -n 's/^version: //p' "$CHART/Chart.yaml")"
 }
 
@@ -64,6 +66,19 @@ next_patch() { # 0.1.9 -> 0.1.10
   assert_output_contains "must be higher than the current $CHART_VERSION"
   run git diff --no-index --quiet "$BATS_TEST_DIRNAME/../charts" "$WORK/charts"
   [ "$status" -eq 0 ]
+}
+
+@test "pins the agent-runner component's version input and regenerates its README" {
+  run pin 1.2.3
+  [ "$status" -eq 0 ]
+  # Only the version input's default changes; image keeps its repository.
+  run python3 -c "import yaml,sys; i=next(yaml.safe_load_all(open(sys.argv[1])))['spec']['inputs']; print(i['version']['default'], i['image']['default'])" "$COMPONENT"
+  assert_output "1.2.3 m13t/ai-agent-for-gitlab-agent"
+  run diff <(sed '/^    version:/,/^    [a-z]/d' "$BATS_TEST_DIRNAME/../templates/agent-runner.yml") <(sed '/^    version:/,/^    [a-z]/d' "$COMPONENT")
+  [ "$status" -eq 0 ]
+  run cat "$WORK/templates/README.md"
+  assert_output_contains "version: 1.2.3"
+  assert_output_contains '| version | string | `1.2.3` |'
 }
 
 @test "regenerates the chart README with helm-docs" {
