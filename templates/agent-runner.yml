@@ -19,7 +19,7 @@ spec:
         default for AI_AGENT_IMAGE; the chart's `agentImage`, passed by the
         webhook as a pipeline variable, wins over both.
     version:
-      default: "0.7.2"
+      default: "0.8.0"
       description: >-
         Agent image tag, e.g. the release version (`0.5.0`). See `image`.
     tags:
