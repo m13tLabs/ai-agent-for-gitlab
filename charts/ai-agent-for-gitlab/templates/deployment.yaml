@@ -33,6 +33,58 @@ spec:
       automountServiceAccountToken: false
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if and .Values.agent.validateModel (include "ai-agent.agentImage" .) }}
+      # Fails the rollout (new pods never start, `helm --wait` fails, old pods
+      # keep serving) when agent.model isn't in the agent image's model catalog,
+      # which is what opencode resolves it against in the CI jobs.
+      initContainers:
+        - name: validate-model
+          image: {{ include "ai-agent.agentImage" . | quote }}
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          terminationMessagePolicy: FallbackToLogsOnError
+          env:
+            - name: MODEL
+              value: {{ .Values.agent.model | quote }}
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+              catalog=/opt/opencode-models.json
+              provider="${MODEL%%/*}"
+              id="${MODEL#*/}"
+              if [ "$provider" = "$MODEL" ] || [ -z "$provider" ] || [ -z "$id" ]; then
+                echo "agent.model \"$MODEL\" must be <provider>/<model>, e.g. amazon-bedrock/eu.anthropic.claude-sonnet-5" >&2
+                exit 1
+              fi
+              if [ ! -f "$catalog" ]; then
+                echo "Skipping the agent.model check: this agent image has no $catalog"
+                exit 0
+              fi
+              if jq -e --arg p "$provider" --arg m "$id" '.[$p].models[$m] != null' "$catalog" > /dev/null; then
+                echo "agent.model $MODEL found in the agent image's model catalog"
+                exit 0
+              fi
+              if ! jq -e --arg p "$provider" 'has($p)' "$catalog" > /dev/null; then
+                echo "agent.model \"$MODEL\": unknown provider \"$provider\"" >&2
+                exit 1
+              fi
+              echo "agent.model \"$MODEL\": no model \"$id\" for provider \"$provider\" in the agent image's model catalog" >&2
+              similar="$(jq -r --arg p "$provider" --arg m "$id" '.[$p].models | keys[] | select(startswith($m))' "$catalog")"
+              if [ -n "$similar" ]; then
+                echo "Did you mean:" >&2
+                echo "$similar" | sed "s|^|  $provider/|" >&2
+              fi
+              exit 1
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 64Mi
+      {{- end }}
       containers:
         - name: webhook
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"

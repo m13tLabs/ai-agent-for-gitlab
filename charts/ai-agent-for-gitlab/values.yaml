@@ -151,6 +151,11 @@ agent:
   runnerProject: ""
   # -- Branch of the runner project to run the pipelines on; empty = its default branch
   runnerRef: ""
+  # -- Check `model` against the agent image's model catalog in an init
+  # container of the webhook pods; an unknown model fails the rollout. Needs
+  # `agentImage.repository`. Turn off for models newer than the agent image, or
+  # custom opencode providers.
+  validateModel: true
   # -- Stop opencode in the agent jobs from fetching its model catalog
   # (OPENCODE_DISABLE_MODELS_FETCH); it then uses the catalog baked into the
   # agent image at build time. For air-gapped runners.

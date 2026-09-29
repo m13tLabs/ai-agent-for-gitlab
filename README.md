@@ -321,6 +321,7 @@ Common chart values:
 | Value | Default | Description |
 | --- | --- | --- |
 | `image.repository` / `image.tag` | `m13t/ai-agent-for-gitlab-app` / release version | Webhook app image; an empty tag falls back to appVersion |
+| `agent.validateModel` | `true` | Init container that checks `agent.model` against the agent image's model catalog; an unknown model fails the rollout (`helm --wait` fails, the old pods keep running) and the log suggests the full ID, e.g. `…-sonnet-4-5` → `…-sonnet-4-5-20250929-v1:0`. Skipped without `agentImage.repository` |
 | `agent.disableModelsFetch` | `false` | `OPENCODE_DISABLE_MODELS_FETCH` for the agent jobs: use the model catalog baked into the agent image (air-gapped runners) |
 | `agent.runnerProject`, `agent.runnerRef` | `""`, `""` | [Central runner project](#runner-mode-one-central-runner-project) that runs every agent pipeline; empty = each project's own pipeline |
 | `agentImage.repository` / `agentImage.tag` | `m13t/ai-agent-for-gitlab-agent` / release version | Forwarded as `AI_AGENT_IMAGE=<repository>:<tag>`; an empty repository keeps each project's own |
