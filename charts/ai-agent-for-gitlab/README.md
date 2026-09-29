@@ -1,6 +1,6 @@
 # ai-agent-for-gitlab
 
-![Version: 0.5.1](https://img.shields.io/badge/Version-0.5.1-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.7.1](https://img.shields.io/badge/AppVersion-0.7.1-informational?style=flat-square)
+![Version: 0.5.2](https://img.shields.io/badge/Version-0.5.2-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.7.2](https://img.shields.io/badge/AppVersion-0.7.2-informational?style=flat-square)
 
 GitLab webhook middleware that triggers AI agent pipelines on @ai mentions and when the AI user is requested as merge request reviewer/assignee.
 
@@ -26,8 +26,8 @@ GitLab webhook middleware that triggers AI agent pipelines on @ai mentions and w
 | agent.startReactionEmoji | string | `"robot"` | Emoji awarded when a run starts |
 | agent.triggerPhrase | string | `""` | Mention that triggers the agent in comments. Empty = `@<gitlab.aiUsername>` when gitlabSetup.enabled (the account it creates), else `@ai`. |
 | agent.validateModel | bool | `true` | Check `model` against the agent image's model catalog in an init container of the webhook pods; an unknown model fails the rollout. Needs `agentImage.repository`. Turn off for models newer than the agent image, or custom opencode providers. |
-| agentImage | object | `{"repository":"m13t/ai-agent-for-gitlab-agent","tag":"0.7.1"}` | Image the CI job uses to run the agent, forwarded to pipelines as AI_AGENT_IMAGE=<repository>:<tag>. Pipeline variables override the default in .gitlab-ci.yml, so every project uses this image. Set repository to "" to keep each project's own AI_AGENT_IMAGE. |
-| agentImage.tag | string | `"0.7.1"` | Set to the release version by each release (scripts/pin-release-version.sh). "" falls back to .Chart.AppVersion. |
+| agentImage | object | `{"repository":"m13t/ai-agent-for-gitlab-agent","tag":"0.7.2"}` | Image the CI job uses to run the agent, forwarded to pipelines as AI_AGENT_IMAGE=<repository>:<tag>. Pipeline variables override the default in .gitlab-ci.yml, so every project uses this image. Set repository to "" to keep each project's own AI_AGENT_IMAGE. |
+| agentImage.tag | string | `"0.7.2"` | Set to the release version by each release (scripts/pin-release-version.sh). "" falls back to .Chart.AppVersion. |
 | extraEnv | list | `[]` | Extra environment variables for the middleware container |
 | extraEnvFrom | list | `[]` | Extra envFrom sources (e.g. a ConfigMap with OPENCODE_AGENT_PROMPT) |
 | fullnameOverride | string | `""` |  |
@@ -60,7 +60,7 @@ GitLab webhook middleware that triggers AI agent pipelines on @ai mentions and w
 | gitlabSetup.token.renewBeforeDays | int | `14` | Rotate the bot token this many days before it expires |
 | image.pullPolicy | string | `"IfNotPresent"` |  |
 | image.repository | string | `"m13t/ai-agent-for-gitlab-app"` |  |
-| image.tag | string | `"0.7.1"` | Set to the release version by each release (scripts/pin-release-version.sh). "" falls back to .Chart.AppVersion. |
+| image.tag | string | `"0.7.2"` | Set to the release version by each release (scripts/pin-release-version.sh). "" falls back to .Chart.AppVersion. |
 | imagePullSecrets | list | `[]` |  |
 | ingress.annotations | object | `{}` |  |
 | ingress.className | string | `""` |  |
