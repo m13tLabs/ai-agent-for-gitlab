@@ -58,7 +58,7 @@ const centralProjects = process.env.MOCK_NO_COMPONENT
   ? []
   : [{
       id: 30,
-      path_with_namespace: "ai/ai-agent-for-gitlab",
+      path_with_namespace: process.env.MOCK_COMPONENT_MOVED ? "infra/components/ai-agent" : "ai/ai-agent-for-gitlab",
       description: "old",
       default_branch: "main",
       mirror: false,
@@ -109,7 +109,10 @@ function route(method, url, body) {
   }
   if ((m = path.match(/^\/api\/v4\/projects\/([^/]+)$/))) {
     const key = decodeURIComponent(m[1]);
-    const p = centralProjects.find((p) => p.path_with_namespace === key || String(p.id) === key);
+    // MOCK_COMPONENT_MOVED: the configured component path is an old one that
+    // GitLab redirects to the project's current path.
+    const lookup = process.env.MOCK_COMPONENT_MOVED && key === "ai/ai-agent-for-gitlab" ? "infra/components/ai-agent" : key;
+    const p = centralProjects.find((p) => p.path_with_namespace === lookup || String(p.id) === lookup);
     // Updates stick, so a re-read sees e.g. the new default branch.
     if (p && method === "PUT") Object.assign(p, JSON.parse(body));
     if (p) return [200, p];

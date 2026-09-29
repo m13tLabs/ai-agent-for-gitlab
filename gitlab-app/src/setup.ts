@@ -706,13 +706,14 @@ export function runnerCiConfig(
   return `${lines.join("\n")}\n`;
 }
 
-export function runnerReadme(cfg: SetupConfig): string {
+// componentPath: the component project's actual path in GitLab.
+export function runnerReadme(cfg: SetupConfig, componentPath = cfg.centralPipeline.componentProject): string {
   const cp = cfg.centralPipeline;
   return `# AI agent runner
 
 Runs the [AI agent for GitLab](${sourceLink(cp.cloneUrl)}) for every project (runner mode). The webhook app starts one pipeline here per \`@${cfg.bot.username}\` mention or review request and passes the target project as pipeline variables (\`AI_PROJECT_ID\`, \`AI_PROJECT_PATH\`, \`AI_BRANCH\`). The agent clones that project itself, so the projects need no CI changes.
 
-- \`.gitlab-ci.yml\` includes the \`${COMPONENT_NAME}\` CI/CD component from [${cp.componentProject}](${cfg.gitlabUrl}/${cp.componentProject}). ${MANAGED_NOTE}: edits to it are overwritten; set the component inputs in the Helm values instead.
+- \`.gitlab-ci.yml\` includes the \`${COMPONENT_NAME}\` CI/CD component from [${componentPath}](${cfg.gitlabUrl}/${componentPath}). ${MANAGED_NOTE}: edits to it are overwritten; set the component inputs in the Helm values instead.
 - Add these CI/CD variables here (Settings → CI/CD → Variables, not protected), or let a dedicated runner inject them:
   - \`GITLAB_TOKEN\`: a token of @${cfg.bot.username}
   - the provider keys of the model, e.g. \`ANTHROPIC_API_KEY\`, or \`AWS_ACCESS_KEY_ID\`, \`AWS_SECRET_ACCESS_KEY\` and \`AWS_REGION\` for Amazon Bedrock
@@ -946,7 +947,7 @@ async function ensureRunnerProject(cfg: SetupConfig, gl: ReturnType<typeof gitla
   const project =
     (await findProject(gl, cp.runnerProject)) ??
     (await createProject(gl, cp.runnerProject, {
-      description: `Runs the AI agent for GitLab for every project, with the CI/CD component from ${cp.componentProject}. ${MANAGED_NOTE}.`,
+      description: `Runs the AI agent for GitLab for every project, with the CI/CD component from ${component.path_with_namespace}. ${MANAGED_NOTE}.`,
       visibility: cp.visibility,
     }));
   await ensureMember(gl, "projects", project.id, cp.runnerProject, botId, OWNER);
@@ -955,7 +956,7 @@ async function ensureRunnerProject(cfg: SetupConfig, gl: ReturnType<typeof gitla
   const branch = project.default_branch || "main";
   const actions: Json[] = [];
   if ((await fileContent(gl, project.id, "README.md", branch)) === null) {
-    actions.push({ action: "create", file_path: "README.md", content: runnerReadme(cfg) });
+    actions.push({ action: "create", file_path: "README.md", content: runnerReadme(cfg, component.path_with_namespace) });
   }
 
   // Decided per file, not per project: a first run that created the project
@@ -964,7 +965,16 @@ async function ensureRunnerProject(cfg: SetupConfig, gl: ReturnType<typeof gitla
   if (currentCi !== null && cp.initialSetupOnly) {
     logger.debug("Runner project .gitlab-ci.yml exists, leaving it alone (initialSetupOnly)", { project: cp.runnerProject });
   } else {
-    const ci = runnerCiConfig(cp.componentProject, await componentRef(cfg, gl, component), cp.inputs, cp.extraIncludes, cp.extraConfig);
+    // The path GitLab reports, not the configured one: a lookup by an old
+    // path (renamed or moved project) is redirected, but a component include
+    // needs the current path.
+    const ci = runnerCiConfig(
+      component.path_with_namespace,
+      await componentRef(cfg, gl, component),
+      cp.inputs,
+      cp.extraIncludes,
+      cp.extraConfig
+    );
     if (currentCi === null) actions.push({ action: "create", file_path: ".gitlab-ci.yml", content: ci });
     else if (currentCi !== ci) actions.push({ action: "update", file_path: ".gitlab-ci.yml", content: ci });
   }

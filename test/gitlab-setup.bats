@@ -264,3 +264,11 @@ central_run() {
   assert_output_contains '"action":"create","file_path":".gitlab-ci.yml"'
   assert_output_contains '"action":"create","file_path":"README.md"'
 }
+
+@test "central pipeline: the include uses the component project's current path, not a redirected old one" {
+  run central_run -e MOCK_COMPONENT_MOVED=1
+  [ "$status" -eq 0 ]
+  assert_output_contains "OK"
+  assert_output_contains 'component: $CI_SERVER_FQDN/infra/components/ai-agent/agent-runner@develop'
+  assert_output_lacks 'component: $CI_SERVER_FQDN/ai/ai-agent-for-gitlab/'
+}
