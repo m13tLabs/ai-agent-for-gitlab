@@ -43,7 +43,8 @@ subjects:
   - kind: ServiceAccount
     name: {{ $name }}
     namespace: {{ .Release.Namespace }}
-{{- if .Values.gitlabSetup.avatar }}
+{{- $projectAvatar := and .Values.gitlabSetup.centralPipeline.enabled .Values.gitlabSetup.centralPipeline.avatar }}
+{{- if or .Values.gitlabSetup.avatar $projectAvatar }}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -52,7 +53,12 @@ metadata:
   labels:
     {{- include "ai-agent.setupLabels" . | nindent 4 }}
 binaryData:
+  {{- if .Values.gitlabSetup.avatar }}
   bot-avatar.png: {{ .Files.Get "files/bot-avatar.png" | b64enc }}
+  {{- end }}
+  {{- if $projectAvatar }}
+  project-avatar.png: {{ .Files.Get "files/project-avatar.png" | b64enc }}
+  {{- end }}
 {{- end }}
 ---
 # Runs once per install/upgrade. Post-hook, so the ServiceAccount, Role,

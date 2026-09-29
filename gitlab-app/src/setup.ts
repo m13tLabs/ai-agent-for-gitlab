@@ -91,6 +91,8 @@ export interface SetupConfig {
     // update it afterwards (for hand-maintained runner projects).
     initialSetupOnly: boolean;
     visibility: string;
+    // Logo uploaded as avatar of both projects while they have none; "" = off.
+    avatarPath: string;
   };
 }
 
@@ -206,6 +208,7 @@ export async function loadConfig(env = process.env): Promise<SetupConfig> {
       extraConfig: env.RUNNER_EXTRA_CONFIG || "",
       initialSetupOnly: env.RUNNER_INITIAL_SETUP_ONLY === "true",
       visibility: env.CENTRAL_PIPELINE_VISIBILITY || "private",
+      avatarPath: env.PROJECT_AVATAR_PATH || "",
     },
   };
 }
@@ -463,6 +466,16 @@ async function ensureAvatar(gl: ReturnType<typeof gitlab>, userId: number, path:
   await gl.request("PUT", `/users/${userId}`, form);
   await gl.request("PUT", `/users/${userId}/custom_attributes/${AVATAR_ATTRIBUTE}`, { value: sha });
   logger.info("Uploaded bot avatar", { userId });
+}
+
+// Project logo as avatar, only while the project has none: that's right after
+// creation, and a logo set by hand afterwards is kept.
+async function ensureProjectAvatar(gl: ReturnType<typeof gitlab>, project: Json, path: string) {
+  if (project.avatar_url) return;
+  const form = new FormData();
+  form.append("avatar", new Blob([await readFile(path)], { type: "image/png" }), "avatar.png");
+  await gl.request("PUT", `/projects/${project.id}`, form);
+  logger.info("Uploaded project avatar", { project: project.path_with_namespace });
 }
 
 type Kind = "groups" | "projects";
@@ -893,6 +906,7 @@ async function ensureComponentProject(cfg: SetupConfig, gl: ReturnType<typeof gi
     logger.info("Updated component project description", { project: cp.componentProject });
   }
   await ensureMember(gl, "projects", project.id, cp.componentProject, botId, OWNER);
+  if (cp.avatarPath) await cosmetic("Could not upload the component project avatar", () => ensureProjectAvatar(gl, project, cp.avatarPath));
 
   const head = await syncComponentProject(cfg, project);
   // A new project gets whichever branch GitLab saw first; follow the source.
@@ -956,6 +970,7 @@ async function ensureRunnerProject(
       visibility: cp.visibility,
     }));
   await ensureMember(gl, "projects", project.id, cp.runnerProject, botId, OWNER);
+  if (cp.avatarPath) await cosmetic("Could not upload the runner project avatar", () => ensureProjectAvatar(gl, project, cp.avatarPath));
   await ensureTokenVariable(cfg, gl, project.id, botToken);
 
   // A new project has no branch yet; the first commit creates it.

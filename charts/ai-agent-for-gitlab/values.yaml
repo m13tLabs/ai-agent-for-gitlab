@@ -135,6 +135,9 @@ gitlabSetup:
     enabled: false
     # -- Visibility of both projects (private, internal or public)
     visibility: private
+    # -- Upload the project logo (files/project-avatar.png) as the avatar of
+    # both projects while they have none (a logo set by hand stays)
+    avatar: true
     component:
       # -- Full path of the component project; its group must exist
       project: ai/ai-agent-for-gitlab

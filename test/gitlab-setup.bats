@@ -290,3 +290,29 @@ central_run() {
   assert_output_contains "OK"
   assert_output_lacks "/api/v4/projects/32/variables"
 }
+
+@test "central pipeline: the logo becomes the avatar of both projects while they have none" {
+  run central_run -e PROJECT_AVATAR_PATH=/etc/hostname
+  [ "$status" -eq 0 ]
+  assert_output_contains "OK"
+  assert_output_contains "PUT /api/v4/projects/30 <multipart avatar>"
+  assert_output_contains "PUT /api/v4/projects/32 <multipart avatar>"
+}
+
+@test "central pipeline: an existing project avatar is kept, no avatar without PROJECT_AVATAR_PATH" {
+  run central_run -e PROJECT_AVATAR_PATH=/etc/hostname -e MOCK_COMPONENT_HAS_AVATAR=1
+  [ "$status" -eq 0 ]
+  assert_output_lacks "PUT /api/v4/projects/30 <multipart"
+  assert_output_contains "PUT /api/v4/projects/32 <multipart avatar>"
+
+  run central_run
+  [ "$status" -eq 0 ]
+  assert_output_lacks "<multipart"
+}
+
+@test "central pipeline: a failing avatar upload only warns" {
+  run central_run -e PROJECT_AVATAR_PATH=/nonexistent.png
+  [ "$status" -eq 0 ]
+  assert_output_contains "OK"
+  assert_output_contains "POST /api/v4/projects/32/repository/commits"
+}

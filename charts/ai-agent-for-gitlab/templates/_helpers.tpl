@@ -206,6 +206,7 @@ restarts the Deployment when it differs from the one the pods last ran with.
 {{/* Pod spec shared by the gitlabSetup Job and CronJob (runs src/setup.ts). */}}
 {{- define "ai-agent.setupPodSpec" -}}
 {{- $setup := .Values.gitlabSetup -}}
+{{- $projectAvatar := and $setup.centralPipeline.enabled $setup.centralPipeline.avatar -}}
 {{- with .Values.imagePullSecrets }}
 imagePullSecrets:
   {{- toYaml . | nindent 2 }}
@@ -247,6 +248,10 @@ containers:
       {{- if $setup.avatar }}
       - name: BOT_AVATAR_PATH
         value: /avatar/bot-avatar.png
+      {{- end }}
+      {{- if $projectAvatar }}
+      - name: PROJECT_AVATAR_PATH
+        value: /avatar/project-avatar.png
       {{- end }}
       - name: SYSTEM_HOOK_ENABLED
         value: {{ $setup.systemHook.enabled | toString | quote }}
@@ -316,7 +321,7 @@ containers:
     volumeMounts:
       - name: tmp
         mountPath: /tmp
-      {{- if $setup.avatar }}
+      {{- if or $setup.avatar $projectAvatar }}
       - name: avatar
         mountPath: /avatar
         readOnly: true
@@ -324,7 +329,7 @@ containers:
 volumes:
   - name: tmp
     emptyDir: {}
-  {{- if $setup.avatar }}
+  {{- if or $setup.avatar $projectAvatar }}
   - name: avatar
     configMap:
       name: {{ include "ai-agent.setupName" . }}-avatar

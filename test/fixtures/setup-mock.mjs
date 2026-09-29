@@ -63,6 +63,7 @@ const centralProjects = process.env.MOCK_NO_COMPONENT
       path_with_namespace: process.env.MOCK_COMPONENT_MOVED ? "infra/components/ai-agent" : "ai/ai-agent-for-gitlab",
       description: "old",
       default_branch: "main",
+      avatar_url: process.env.MOCK_COMPONENT_HAS_AVATAR ? "http://mock/custom.png" : null,
       mirror: false,
       http_url_to_repo: TARGET,
     }];
@@ -72,6 +73,15 @@ if (process.env.MOCK_RUNNER_EXISTS) {
 const edition = process.env.MOCK_EDITION || "ce";
 
 const writes = [];
+
+// JSON body, or {multipart: [field names]} for a form upload (avatars).
+function parseBody(body) {
+  try {
+    return JSON.parse(body);
+  } catch {
+    return { multipart: [...body.matchAll(/Content-Disposition: form-data; name="([^"]+)"/g)].map((m) => m[1]) };
+  }
+}
 
 function route(method, url, body) {
   const path = url.pathname;
@@ -112,7 +122,7 @@ function route(method, url, body) {
       "Access token of the AI agent bot @review-agent for the agent jobs. Managed and rotated by the ai-agent-for-gitlab setup Job; edits are overwritten.";
     return [200, { key: "GITLAB_AI_AGENT_TOKEN", value, masked: true, protected: false, description }];
   }
-  if (method === "PUT" && process.env.MOCK_MIRROR_FAILS && JSON.parse(body).mirror) {
+  if (method === "PUT" && process.env.MOCK_MIRROR_FAILS && parseBody(body).mirror) {
     return [422, { message: "Unable to access repository with the URL and credentials provided" }];
   }
   if ((m = path.match(/^\/api\/v4\/projects\/([^/]+)$/))) {
@@ -122,7 +132,11 @@ function route(method, url, body) {
     const lookup = process.env.MOCK_COMPONENT_MOVED && key === "ai/ai-agent-for-gitlab" ? "infra/components/ai-agent" : key;
     const p = centralProjects.find((p) => p.path_with_namespace === lookup || String(p.id) === lookup);
     // Updates stick, so a re-read sees e.g. the new default branch.
-    if (p && method === "PUT") Object.assign(p, JSON.parse(body));
+    if (p && method === "PUT") {
+      const update = parseBody(body);
+      if (update.multipart) p.avatar_url = "http://mock/avatar.png";
+      else Object.assign(p, update);
+    }
     if (p) return [200, p];
   }
   if (path === "/api/v4/user") return [200, { username: "root", is_admin: true }];
@@ -163,7 +177,10 @@ const server = http.createServer((req, res) => {
   req.on("data", (c) => (body += c));
   req.on("end", () => {
     const url = new URL(req.url, "http://mock");
-    if (req.method !== "GET") writes.push(`${req.method} ${url.pathname} ${body}`);
+    if (req.method !== "GET") {
+      const parsed = parseBody(body);
+      writes.push(`${req.method} ${url.pathname} ${parsed.multipart ? `<multipart ${parsed.multipart.join(",")}>` : body}`);
+    }
     const [status, payload] = route(req.method, url, body);
     res.writeHead(status, { "Content-Type": "application/json" });
     res.end(JSON.stringify(payload));
