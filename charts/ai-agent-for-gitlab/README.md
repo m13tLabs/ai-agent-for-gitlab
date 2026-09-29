@@ -14,6 +14,7 @@ GitLab webhook middleware that triggers AI agent pipelines on @ai mentions and w
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
+| additionalEnvs | list | `[]` | Environment variables for the webhook pods **and** the gitlabSetup Job/CronJob, e.g. an outbound proxy; a map or a list of maps (`[{HTTPS_PROXY: "http://proxy:3128"}, {NO_PROXY: ".svc,gitlab.internal"}]`). With HTTP(S)_PROXY set, NODE_USE_ENV_PROXY=1 is added (Node's fetch ignores the proxy otherwise) and the Kubernetes API address is appended to NO_PROXY. NO_PROXY takes host names, domain suffixes (`.svc`) and IPs, but no CIDRs. |
 | affinity | object | `{}` |  |
 | agent.branchPrefix | string | `"ai"` | Prefix for branches created for issues |
 | agent.cancelOldPipelines | bool | `true` | Cancel older pending pipelines on the same ref |

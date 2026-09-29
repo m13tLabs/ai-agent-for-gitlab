@@ -733,12 +733,25 @@ async function ensureComponentProject(cfg: SetupConfig, gl: ReturnType<typeof gi
   const existing = await findProject(gl, cp.componentProject);
   let project: Json;
   if (!existing) {
-    project = await createProject(gl, cp.componentProject, {
-      import_url: cp.cloneUrl,
-      description,
-      visibility: cp.visibility,
-      ...(mirror ? mirrorAttributes : {}),
-    });
+    try {
+      project = await createProject(gl, cp.componentProject, {
+        import_url: cp.cloneUrl,
+        description,
+        visibility: cp.visibility,
+        ...(mirror ? mirrorAttributes : {}),
+      });
+    } catch (e) {
+      // GitLab checks the URL with `git ls-remote` from its own servers first.
+      if (e instanceof GitLabError && e.status === 422 && /unable to access repository/i.test(e.message)) {
+        throw new Error(
+          `GitLab can't reach ${sourceLink(cp.cloneUrl)} to import ${cp.componentProject} (${e.message}). ` +
+            "The GitLab server itself clones it, not this Job: give GitLab outbound access (or its proxy settings), " +
+            "or set gitlabSetup.centralPipeline.component.cloneUrl to a mirror GitLab can reach; " +
+            "a private source needs credentials in the URL."
+        );
+      }
+      throw e;
+    }
   } else {
     project = existing;
     // GitLab returns import_url without credentials, hence the comparison by link.

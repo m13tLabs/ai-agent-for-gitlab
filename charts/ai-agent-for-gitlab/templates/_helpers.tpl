@@ -125,6 +125,46 @@ the one gitlabSetup.centralPipeline creates, else "" (each project's own pipelin
 {{- end }}
 {{- end }}
 
+{{/*
+additionalEnvs as env entries, for the webhook and gitlabSetup containers.
+Takes a map ({HTTPS_PROXY: ...}) or a list of maps ([{HTTPS_PROXY: ...}]).
+With a proxy variable set, Node's fetch only uses it with NODE_USE_ENV_PROXY=1,
+and the Kubernetes API (reached by IP, NO_PROXY takes no CIDRs) is added to
+NO_PROXY through the kubelet's $(VAR) expansion of the service variables.
+*/}}
+{{- define "ai-agent.additionalEnvs" -}}
+{{- $in := .Values.additionalEnvs | default list }}
+{{- $maps := kindIs "map" $in | ternary (list $in) $in }}
+{{- $pairs := list }}
+{{- $names := dict }}
+{{- range $maps }}
+{{- range $name, $value := . }}
+{{- $pairs = append $pairs (dict "name" $name "value" (toString $value)) }}
+{{- $_ := set $names $name true }}
+{{- end }}
+{{- end }}
+{{- $proxy := or (hasKey $names "HTTPS_PROXY") (hasKey $names "https_proxy") (hasKey $names "HTTP_PROXY") (hasKey $names "http_proxy") }}
+{{- $noProxy := ternary "no_proxy" "NO_PROXY" (and (hasKey $names "no_proxy") (not (hasKey $names "NO_PROXY"))) }}
+{{- range $pairs }}
+- name: {{ .name }}
+  {{- if and $proxy (eq .name $noProxy) }}
+  value: {{ printf "%s,$(KUBERNETES_SERVICE_HOST)" .value | quote }}
+  {{- else }}
+  value: {{ .value | quote }}
+  {{- end }}
+{{- end }}
+{{- if $proxy }}
+{{- if not (hasKey $names "NODE_USE_ENV_PROXY") }}
+- name: NODE_USE_ENV_PROXY
+  value: "1"
+{{- end }}
+{{- if not (hasKey $names $noProxy) }}
+- name: NO_PROXY
+  value: "$(KUBERNETES_SERVICE_HOST)"
+{{- end }}
+{{- end }}
+{{- end }}
+
 {{- define "ai-agent.redisEnabled" -}}
 {{- if and .Values.rateLimiting.enabled .Values.redis.enabled }}true{{- end }}
 {{- end }}
@@ -260,6 +300,9 @@ containers:
         value: {{ .Values.logging.level | quote }}
       - name: LOG_FORMAT
         value: {{ .Values.logging.format | quote }}
+      {{- with include "ai-agent.additionalEnvs" . }}
+      {{- . | nindent 6 }}
+      {{- end }}
     resources:
       {{- toYaml $setup.resources | nindent 6 }}
     volumeMounts:

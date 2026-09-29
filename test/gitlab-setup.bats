@@ -205,3 +205,9 @@ central_run() {
     assert_output_lacks "mirror/pull"
   done
 }
+
+@test "central pipeline: an import URL GitLab can't reach fails with an explanation" {
+  run central_run -e MOCK_NO_COMPONENT=1 -e COMPONENT_CLONE_URL=https://unreachable.example/ai-agent-for-gitlab.git
+  assert_output_contains "FAILED: GitLab can't reach https://unreachable.example/ai-agent-for-gitlab to import ai/ai-agent-for-gitlab"
+  assert_output_contains "set gitlabSetup.centralPipeline.component.cloneUrl to a mirror GitLab can reach"
+}

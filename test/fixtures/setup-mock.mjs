@@ -62,7 +62,10 @@ function route(method, url, body) {
       : [200, { data: { catalogResourcesCreate: { errors: [] } } }];
   }
   if (method === "POST" && path === "/api/v4/projects") {
-    const { name } = JSON.parse(body);
+    const { name, import_url: importUrl } = JSON.parse(body);
+    if (importUrl?.includes("unreachable")) {
+      return [422, { message: "Unable to access repository with the URL and credentials provided" }];
+    }
     const project = { id: name === "agent-runner" ? 32 : 31, path_with_namespace: `ai/${name}`, default_branch: null };
     centralProjects.push(project);
     return [201, project];
