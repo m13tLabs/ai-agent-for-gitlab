@@ -45,6 +45,27 @@ next_patch() { # 0.1.9 -> 0.1.10
   assert_output "$(next_patch "$(next_patch "$CHART_VERSION")")"
 }
 
+@test "uses an explicitly given chart version instead of the patch bump" {
+  run pin 1.2.3 99.0.0
+  [ "$status" -eq 0 ]
+  run sed -n 's/^version: //p' "$CHART/Chart.yaml"
+  assert_output "99.0.0"
+  run sed -n 's/^appVersion: //p' "$CHART/Chart.yaml"
+  assert_output '"1.2.3"'
+  run cat "$CHART/README.md"
+  assert_output_contains "Version-99.0.0"
+}
+
+@test "rejects a chart version that isn't X.Y.Z or not higher than the current one" {
+  for v in v99.0.0 99.0 "$CHART_VERSION" 0.0.1; do
+    run pin 1.2.3 "$v"
+    [ "$status" -ne 0 ]
+  done
+  assert_output_contains "must be higher than the current $CHART_VERSION"
+  run git diff --no-index --quiet "$BATS_TEST_DIRNAME/../charts" "$WORK/charts"
+  [ "$status" -eq 0 ]
+}
+
 @test "regenerates the chart README with helm-docs" {
   pin 1.2.3
   run cat "$CHART/README.md"

@@ -19,12 +19,37 @@ on:
         type: boolean
         required: false
         default: true
+      chart_version:
+        description: 'Helm chart version (X.Y.Z, higher than the current one). Empty = patch-bump the current chart version'
+        type: string
+        required: false
+        default: ''
 
 jobs:
+  # bump_command is a shell string, so only a value checked here may go into
+  # it; the input itself is never spliced into a script.
+  chart-version:
+    name: Check chart version
+    runs-on: ubuntu-latest
+    permissions: {}
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - id: check
+        env:
+          CHART_VERSION: ${{ inputs.chart_version }}
+        run: |
+          if ! [[ "$CHART_VERSION" =~ ^([0-9]+\.[0-9]+\.[0-9]+)?$ ]]; then
+            echo "::error::chart_version must be X.Y.Z or empty, got '$CHART_VERSION'"
+            exit 1
+          fi
+          echo "version=$CHART_VERSION" >> "$GITHUB_OUTPUT"
+
   # One release, one version, two images: gitlab-app is the main build and
   # agent-image rides along as the template's "variant" build under its own
   # image names (no tag suffix).
   release:
+    needs: chart-version
     uses: m13tLabs/gh-actions-templates/.github/workflows/docker-release.yml@main
     permissions:
       contents: read
@@ -45,8 +70,10 @@ jobs:
       draft_release: ${{ inputs.draft_release }}
       dockerhub: true
       # Pin the chart's image.tag / agentImage.tag and Chart.yaml versions in
-      # the release commit, like glab-docs pins its CI component template.
-      bump_command: scripts/pin-release-version.sh "$RELEASE_VERSION"
+      # the release commit, like glab-docs pins its CI component template. The
+      # chart version is X.Y.Z or empty (checked by the chart-version job);
+      # empty patch-bumps it.
+      bump_command: scripts/pin-release-version.sh "$RELEASE_VERSION" "${{ needs.chart-version.outputs.version }}"
     secrets: inherit
 
   # Publish the Helm chart pinned by the release commit (appVersion + image
@@ -61,6 +88,7 @@ jobs:
       packages: write
     env:
       VERSION: ${{ needs.release.outputs.release_version }}
+      CHART_VERSION: ${{ inputs.chart_version }}
     steps:
       # The release commit, not the v<version> tag: a draft release has no tag yet.
       - name: Checkout
@@ -91,6 +119,9 @@ jobs:
           helm package charts/ai-agent-for-gitlab
           # Guards that scripts/pin-release-version.sh ran in the release commit.
           helm show chart ./*.tgz | grep -qx "appVersion: \"\?${VERSION}\"\?"
+          if [ -n "$CHART_VERSION" ]; then
+            helm show chart ./*.tgz | grep -qx "version: ${CHART_VERSION}"
+          fi
 
       - name: Login to GitHub Container Registry
         env:
