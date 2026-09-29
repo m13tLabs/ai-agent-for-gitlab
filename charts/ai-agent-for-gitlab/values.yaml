@@ -150,7 +150,8 @@ gitlabSetup:
       # can't, the setup Job logs a warning and its own sync carries on.
       mirror: true
       # -- Ref of the component the runner project includes (branch, tag or
-      # SHA); empty = the component project's default branch
+      # SHA); empty = this chart's release tag, `v<appVersion>` (e.g. v0.7.1),
+      # which the component's `version` input also defaults to
       ref: ""
     runner:
       # -- Full path of the runner project; its group must exist

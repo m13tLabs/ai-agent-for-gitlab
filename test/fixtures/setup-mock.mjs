@@ -88,6 +88,14 @@ function route(method, url, body) {
     const g = centralGroups.find((g) => g.full_path === decodeURIComponent(m[1]));
     if (g) return [200, g];
   }
+  if ((m = path.match(/^\/api\/v4\/projects\/3[01]\/repository\/commits\/(.+)$/))) {
+    try {
+      execSync(`git --git-dir=/tmp/target.git rev-parse --verify --quiet ${JSON.stringify(`${decodeURIComponent(m[1])}^{commit}`)}`, { stdio: "ignore" });
+      return [200, { id: "abc" }];
+    } catch {
+      return [404, { message: "404 Commit Not Found" }];
+    }
+  }
   if (method === "PUT" && process.env.MOCK_MIRROR_FAILS && JSON.parse(body).mirror) {
     return [422, { message: "Unable to access repository with the URL and credentials provided" }];
   }

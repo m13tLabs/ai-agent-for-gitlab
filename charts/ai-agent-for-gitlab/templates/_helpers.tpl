@@ -282,7 +282,7 @@ containers:
       - name: COMPONENT_MIRROR
         value: {{ .component.mirror | toString | quote }}
       - name: COMPONENT_REF
-        value: {{ .component.ref | quote }}
+        value: {{ .component.ref | default (printf "v%s" $.Chart.AppVersion) | quote }}
       - name: RUNNER_PROJECT
         value: {{ required "gitlabSetup.centralPipeline.runner.project is required" .runner.project | quote }}
       - name: RUNNER_COMPONENT_INPUTS

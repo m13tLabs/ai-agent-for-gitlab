@@ -151,7 +151,7 @@ central_run() {
   assert_output_contains 'POST /api/v4/projects {"name":"agent-runner","path":"agent-runner","namespace_id":20'
   assert_output_contains 'POST /api/v4/projects/32/members {"user_id":7,"access_level":50}'
   assert_output_contains 'POST /api/v4/projects/32/repository/commits {"branch":"main"'
-  assert_output_contains 'component: $CI_SERVER_FQDN/ai/ai-agent-for-gitlab/agent-runner@develop\n    inputs: {\"tags\":[\"ai-agent\"]}'
+  assert_output_contains 'component: $CI_SERVER_FQDN/ai/ai-agent-for-gitlab/agent-runner@develop\n    inputs:\n      tags:\n        - \"ai-agent\"\n'
   assert_output_contains '"action":"create","file_path":"README.md"'
 }
 
@@ -167,10 +167,17 @@ central_run() {
   assert_output_contains "POST /api/v4/projects/32/repository/commits"
 }
 
-@test "central pipeline: component ref overrides the default branch" {
-  run central_run -e COMPONENT_REF=v0.5.0
+@test "central pipeline: component ref (the chart's release tag) overrides the default branch" {
+  run central_run -e COMPONENT_REF=v0.5.0 \
+    -e RUNNER_COMPONENT_INPUTS='{"image":"m13t/ai-agent-for-gitlab-agent","job-name":"ai-review","version":"0.7.1"}'
   [ "$status" -eq 0 ]
-  assert_output_contains 'agent-runner@v0.5.0'
+  assert_output_contains 'agent-runner@v0.5.0\n    inputs:\n      image: \"m13t/ai-agent-for-gitlab-agent\"\n      job-name: \"ai-review\"\n      version: \"0.7.1\"\n'
+}
+
+@test "central pipeline: a ref missing from the component project fails with an explanation" {
+  run central_run -e COMPONENT_REF=v9.9.9
+  assert_output_contains 'FAILED: Ref "v9.9.9" not found in ai/ai-agent-for-gitlab (synced from file:///tmp/source)'
+  assert_output_lacks "repository/commits {"
 }
 
 @test "central pipeline on Premium: pull mirror enabled on top of the Job's sync" {

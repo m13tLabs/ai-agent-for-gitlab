@@ -634,6 +634,40 @@ export function sourceLink(cloneUrl: string): string {
   }
 }
 
+// Block-style YAML for the component inputs, without a YAML dependency:
+// strings JSON-quoted (valid YAML double-quoted scalars), other scalars as is,
+// maps and lists nested. Keys outside [A-Za-z0-9_-] are quoted.
+export function yamlBlock(value: Json, indent: number): string[] {
+  const pad = " ".repeat(indent);
+  const key = (k: string) => (/^[A-Za-z0-9_-]+$/.test(k) ? k : JSON.stringify(k));
+  const scalar = (v: unknown) => (typeof v === "string" ? JSON.stringify(v) : String(v));
+  const isMap = (v: unknown): v is Json => typeof v === "object" && v !== null && !Array.isArray(v);
+  const lines: string[] = [];
+  for (const [k, v] of Object.entries(value)) {
+    if (isMap(v)) {
+      if (Object.keys(v).length) lines.push(`${pad}${key(k)}:`, ...yamlBlock(v, indent + 2));
+      else lines.push(`${pad}${key(k)}: {}`);
+    } else if (Array.isArray(v)) {
+      if (!v.length) {
+        lines.push(`${pad}${key(k)}: []`);
+        continue;
+      }
+      lines.push(`${pad}${key(k)}:`);
+      for (const item of v) {
+        if (isMap(item)) {
+          const [first, ...rest] = yamlBlock(item, indent + 4);
+          lines.push(`${pad}  - ${first.trimStart()}`, ...rest);
+        } else {
+          lines.push(`${pad}  - ${scalar(item)}`);
+        }
+      }
+    } else {
+      lines.push(`${pad}${key(k)}: ${scalar(v)}`);
+    }
+  }
+  return lines;
+}
+
 export function runnerCiConfig(componentProject: string, ref: string, inputs: Json): string {
   const lines = [
     `# ${MANAGED_NOTE}; edits here are overwritten.`,
@@ -641,8 +675,7 @@ export function runnerCiConfig(componentProject: string, ref: string, inputs: Js
     "include:",
     `  - component: $CI_SERVER_FQDN/${componentProject}/${COMPONENT_NAME}@${ref}`,
   ];
-  // JSON is valid YAML (flow style), which keeps this free of a YAML dependency.
-  if (Object.keys(inputs).length) lines.push(`    inputs: ${JSON.stringify(inputs)}`);
+  if (Object.keys(inputs).length) lines.push("    inputs:", ...yamlBlock(inputs, 6));
   return `${lines.join("\n")}\n`;
 }
 
@@ -893,6 +926,17 @@ async function ensureRunnerProject(cfg: SetupConfig, gl: ReturnType<typeof gitla
 
   const ref = cp.ref || component.default_branch;
   if (!ref) throw new Error(`${cp.componentProject} has no default branch yet; set gitlabSetup.centralPipeline.component.ref`);
+  // A tag the source doesn't have (e.g. v<chart appVersion> before that release
+  // is pushed) would only break the runner pipelines later.
+  try {
+    await gl.request("GET", `/projects/${component.id}/repository/commits/${encodeURIComponent(ref)}`);
+  } catch (e) {
+    if (!(e instanceof GitLabError && e.status === 404)) throw e;
+    throw new Error(
+      `Ref "${ref}" not found in ${cp.componentProject} (synced from ${sourceLink(cp.cloneUrl)}); ` +
+        "set gitlabSetup.centralPipeline.component.ref to an existing tag or branch"
+    );
+  }
 
   // A new project has no branch yet; the first commit creates it.
   const branch = project.default_branch || "main";
