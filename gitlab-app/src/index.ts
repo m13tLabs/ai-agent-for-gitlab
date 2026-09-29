@@ -250,7 +250,8 @@ app.post("/webhook", async (c) => {
   });
 
   // Verify webhook secret
-  if (gitlabToken !== process.env.WEBHOOK_SECRET) {
+  // An unset secret (the gitlabSetup Job hasn't generated it yet) matches no request.
+  if (!process.env.WEBHOOK_SECRET || gitlabToken !== process.env.WEBHOOK_SECRET) {
     // Identify the sending hook (never the token) so a stale or foreign hook
     // can be found in GitLab: Settings > Webhooks > Recent events, by UUID.
     logger.warn("Webhook unauthorized - invalid token", {

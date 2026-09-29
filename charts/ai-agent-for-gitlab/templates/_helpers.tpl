@@ -65,10 +65,25 @@ app.kubernetes.io/component: gitlab-setup
 {{- end }}
 
 {{/*
+"true" when the gitlabSetup Job generates the webhook secret and keeps it in
+the bot-token Secret: gitlabSetup.enabled and no webhook secret given (inline,
+existingSecret or secretKeyRefs). A chart-generated one would change on every
+render without `lookup` (Argo CD, helm template).
+*/}}
+{{- define "ai-agent.webhookSecretGenerated" -}}
+{{- $s := .Values.secrets }}
+{{- if and .Values.gitlabSetup.enabled (not $s.existingSecret) (not $s.webhookSecret) (not (dig "webhookSecret" "name" "" ($s.secretKeyRefs | default dict))) -}}
+true
+{{- end }}
+{{- end }}
+
+{{/*
 secretKeyRef body (name + key) for one token, called with (list $ "<token>")
 where <token> is gitlabToken, webhookSecret, adminToken or gitlabAdminToken.
 secrets.secretKeyRefs.<token>.name wins (key defaults to secrets.keys.<token>);
-otherwise existingSecret or the chart Secret with secrets.keys.<token>.
+otherwise existingSecret or the chart Secret with secrets.keys.<token>. A
+generated webhook secret comes from the bot-token Secret, optional because
+the post-install Job creates it.
 */}}
 {{- define "ai-agent.secretKeyRef" -}}
 {{- $root := index . 0 }}
@@ -79,6 +94,10 @@ otherwise existingSecret or the chart Secret with secrets.keys.<token>.
 {{- if $refName -}}
 name: {{ $refName | quote }}
 key: {{ dig $token "key" "" $refs | default $key | quote }}
+{{- else if and (eq $token "webhookSecret") (include "ai-agent.webhookSecretGenerated" $root) -}}
+name: {{ include "ai-agent.botTokenSecretName" $root | quote }}
+key: {{ $key | quote }}
+optional: true
 {{- else -}}
 name: {{ include "ai-agent.secretName" $root | quote }}
 key: {{ $key | quote }}
@@ -261,6 +280,13 @@ containers:
         value: {{ include "ai-agent.systemHookUrl" . | quote }}
       - name: SYSTEM_HOOK_SSL_VERIFICATION
         value: {{ $setup.systemHook.sslVerification | toString | quote }}
+      {{- end }}
+      {{- if include "ai-agent.webhookSecretGenerated" . }}
+      - name: WEBHOOK_SECRET_GENERATE
+        value: "true"
+      - name: WEBHOOK_SECRET_KEY
+        value: {{ .Values.secrets.keys.webhookSecret | quote }}
+      {{- else if or $setup.systemHook.enabled $setup.projects }}
       - name: WEBHOOK_SECRET
         valueFrom:
           secretKeyRef:

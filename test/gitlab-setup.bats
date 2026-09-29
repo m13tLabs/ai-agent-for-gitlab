@@ -123,6 +123,26 @@ assert_output_lacks() {
   assert_output_contains "PATCH /apis/apps/v1/namespaces/test/deployments/web"
 }
 
+@test "generated webhook secret: the stored one is reused, nothing rewritten or restarted" {
+  run setup_run -e WEBHOOK_SECRET_GENERATE=true -e MOCK_STORED_WEBHOOK_SECRET=hook-secret \
+    -e RESTART_DEPLOYMENT=web -e CONFIG_CHECKSUM=chart-sum
+  [ "$status" -eq 0 ]
+  assert_output_contains "OK"
+  assert_output_contains '"token":"hook-secret"'
+  assert_output_lacks "/secrets/bot-token"
+  assert_output_lacks "/deployments/web"
+}
+
+@test "generated webhook secret: created once in the bot-token Secret, hooks and pods switch to it" {
+  run setup_run -e WEBHOOK_SECRET_GENERATE=true -e RESTART_DEPLOYMENT=web -e CONFIG_CHECKSUM=chart-sum
+  [ "$status" -eq 0 ]
+  assert_output_contains "OK"
+  assert_output_contains 'PATCH /api/v1/namespaces/test/secrets/bot-token {"metadata":{"resourceVersion":"42"},"data":{"WEBHOOK_SECRET":'
+  # WEBHOOK_SECRET from the environment is ignored in this mode.
+  assert_output_lacks '"token":"hook-secret"'
+  assert_output_contains "PATCH /apis/apps/v1/namespaces/test/deployments/web"
+}
+
 # setup_run with the central pipeline on (see the mock for its projects and repos)
 central_run() {
   setup_run -e CENTRAL_PIPELINE_ENABLED=true \

@@ -62,7 +62,7 @@ binaryData:
 {{- end }}
 ---
 # Runs once per install/upgrade. Post-hook, so the ServiceAccount, Role,
-# ConfigMap and the chart Secret (admin token, webhook secret) already exist.
+# ConfigMap and the chart Secret (admin token) already exist.
 # Restarts the webhook Deployment when gitlab.* or secrets.* changed.
 apiVersion: batch/v1
 kind: Job

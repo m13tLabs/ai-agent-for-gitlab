@@ -10,6 +10,8 @@
 //   bot      review-agent (7); its stored token is valid, so no rotation
 //   deployment web: its pods last ran with CONFIG_CHECKSUM "chart-sum" and
 //            WEBHOOK_SECRET "hook-secret"
+//   secret   bot-token (resourceVersion 42) holds the bot token; with
+//            MOCK_STORED_WEBHOOK_SECRET also that value as WEBHOOK_SECRET
 //   central pipeline (only looked up by path, not listed): group ai (20);
 //            component project ai/ai-agent-for-gitlab (30, default branch
 //            main, not a mirror, not yet a catalog resource) unless
@@ -161,7 +163,11 @@ function route(method, url, body) {
     return [200, { id: 5, active: true, user_id: BOT_ID, expires_at: "2099-01-01" }];
   }
   if (method === "GET" && path.startsWith("/api/v1/namespaces/test/secrets/")) {
-    return [200, { data: { GITLAB_TOKEN: Buffer.from("stored-bot-token").toString("base64") } }];
+    const data = { GITLAB_TOKEN: Buffer.from("stored-bot-token").toString("base64") };
+    if (process.env.MOCK_STORED_WEBHOOK_SECRET) {
+      data.WEBHOOK_SECRET = Buffer.from(process.env.MOCK_STORED_WEBHOOK_SECRET).toString("base64");
+    }
+    return [200, { metadata: { resourceVersion: "42" }, data }];
   }
   if (method === "GET" && path === "/apis/apps/v1/namespaces/test/deployments/web") {
     const checksum = createHash("sha256").update("chart-sum\0hook-secret").digest("hex");
