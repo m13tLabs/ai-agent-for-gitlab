@@ -158,6 +158,14 @@ gitlabSetup:
       project: ai/agent-runner
       # -- Inputs for the agent-runner component, e.g. `{tags: [ai-agent]}`
       inputs: {}
+      # -- Further `include:` entries after the component, e.g.
+      # `[{project: infra/helpers, ref: v1.0.0, file: .gitlab-ci/include.yml}]`
+      extraIncludes: []
+      # -- Further top-level configuration for the runner project's
+      # .gitlab-ci.yml: a YAML string (kept as is) or a map. A job named like
+      # the component's `job-name` input is merged with the agent job, e.g.
+      # `{ai-review: {extends: [.proxy_setup]}}`.
+      extraConfig: ""
   # -- CronJob schedule for re-syncing (new groups/projects, token rotation)
   schedule: "17 * * * *"
   resources:

@@ -221,3 +221,17 @@ central_run() {
   run setup_run -e CENTRAL_PIPELINE_ENABLED=true -e COMPONENT_PROJECT=ai/x
   assert_output_contains "FAILED: Missing COMPONENT_CLONE_URL"
 }
+
+@test "central pipeline: extra includes and extra config are appended to the runner's .gitlab-ci.yml" {
+  run central_run -e COMPONENT_REF=v0.5.0 \
+    -e RUNNER_COMPONENT_INPUTS='{"job-name":"ai-review"}' \
+    -e RUNNER_EXTRA_INCLUDES='[{"project":"infra/jobs/gitlab-components/helpers","ref":"v1.0.0","file":".gitlab-ci/include.yml"}]' \
+    -e RUNNER_EXTRA_CONFIG=$'ai-review:\n  extends:\n    - .proxy_setup\n'
+  [ "$status" -eq 0 ]
+  assert_output_contains 'agent-runner@v0.5.0\n    inputs:\n      job-name: \"ai-review\"\n  - project: \"infra/jobs/gitlab-components/helpers\"\n    ref: \"v1.0.0\"\n    file: \".gitlab-ci/include.yml\"\n\nai-review:\n  extends:\n    - .proxy_setup\n'
+}
+
+@test "central pipeline: extra includes must be a list of maps" {
+  run central_run -e RUNNER_EXTRA_INCLUDES='{"project":"x"}'
+  assert_output_contains "FAILED: RUNNER_EXTRA_INCLUDES must be a JSON array of objects"
+}

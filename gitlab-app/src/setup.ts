@@ -83,6 +83,10 @@ export interface SetupConfig {
     ref: string;
     runnerProject: string;
     inputs: Json;
+    // Appended to the runner project's .gitlab-ci.yml: further `include:`
+    // entries and raw top-level YAML (e.g. `<job-name>: {extends: [...]}`).
+    extraIncludes: Json[];
+    extraConfig: string;
     visibility: string;
   };
 }
@@ -144,6 +148,10 @@ export async function loadConfig(env = process.env): Promise<SetupConfig> {
   const projects = parseTargets("SETUP_PROJECTS", env.SETUP_PROJECTS, accessLevel, !hookEnabled);
   const needsHookTarget = hookEnabled || projects.length > 0;
   const centralPipeline = env.CENTRAL_PIPELINE_ENABLED === "true";
+  const extraIncludes = JSON.parse(env.RUNNER_EXTRA_INCLUDES || "[]");
+  if (!Array.isArray(extraIncludes) || extraIncludes.some((i) => typeof i !== "object" || i === null || Array.isArray(i))) {
+    throw new Error(`RUNNER_EXTRA_INCLUDES must be a JSON array of objects, got ${env.RUNNER_EXTRA_INCLUDES}`);
+  }
   const inputs = JSON.parse(env.RUNNER_COMPONENT_INPUTS || "{}");
   if (typeof inputs !== "object" || inputs === null || Array.isArray(inputs)) {
     throw new Error(`RUNNER_COMPONENT_INPUTS must be a JSON object, got ${env.RUNNER_COMPONENT_INPUTS}`);
@@ -191,6 +199,8 @@ export async function loadConfig(env = process.env): Promise<SetupConfig> {
       ref: env.COMPONENT_REF || "",
       runnerProject: centralPipeline ? requireEnv("RUNNER_PROJECT") : "",
       inputs,
+      extraIncludes,
+      extraConfig: env.RUNNER_EXTRA_CONFIG || "",
       visibility: env.CENTRAL_PIPELINE_VISIBILITY || "private",
     },
   };
@@ -668,14 +678,27 @@ export function yamlBlock(value: Json, indent: number): string[] {
   return lines;
 }
 
-export function runnerCiConfig(componentProject: string, ref: string, inputs: Json): string {
+export function runnerCiConfig(
+  componentProject: string,
+  ref: string,
+  inputs: Json,
+  extraIncludes: Json[] = [],
+  extraConfig = ""
+): string {
   const lines = [
     `# ${MANAGED_NOTE}; edits here are overwritten.`,
-    "# Component inputs: gitlabSetup.centralPipeline.runner.inputs",
+    "# Set in gitlabSetup.centralPipeline.runner: inputs, extraIncludes, extraConfig",
     "include:",
     `  - component: $CI_SERVER_FQDN/${componentProject}/${COMPONENT_NAME}@${ref}`,
   ];
   if (Object.keys(inputs).length) lines.push("    inputs:", ...yamlBlock(inputs, 6));
+  for (const include of extraIncludes) {
+    const [first, ...rest] = yamlBlock(include, 4);
+    if (first) lines.push(`  - ${first.trimStart()}`, ...rest);
+  }
+  // Raw YAML, e.g. `ai-review: {extends: [.proxy_setup]}`: GitLab merges a job
+  // defined here with the component's job of the same name.
+  if (extraConfig.trim()) lines.push("", extraConfig.replace(/\s+$/, ""));
   return `${lines.join("\n")}\n`;
 }
 
@@ -941,7 +964,7 @@ async function ensureRunnerProject(cfg: SetupConfig, gl: ReturnType<typeof gitla
   // A new project has no branch yet; the first commit creates it.
   const branch = project.default_branch || "main";
   const files = [
-    { path: ".gitlab-ci.yml", content: runnerCiConfig(cp.componentProject, ref, cp.inputs), managed: true },
+    { path: ".gitlab-ci.yml", content: runnerCiConfig(cp.componentProject, ref, cp.inputs, cp.extraIncludes, cp.extraConfig), managed: true },
     { path: "README.md", content: runnerReadme(cfg), managed: false },
   ];
   const actions: Json[] = [];

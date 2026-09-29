@@ -287,6 +287,12 @@ containers:
         value: {{ required "gitlabSetup.centralPipeline.runner.project is required" .runner.project | quote }}
       - name: RUNNER_COMPONENT_INPUTS
         value: {{ .runner.inputs | default dict | toJson | quote }}
+      - name: RUNNER_EXTRA_INCLUDES
+        value: {{ .runner.extraIncludes | default list | toJson | quote }}
+      {{- with .runner.extraConfig }}
+      - name: RUNNER_EXTRA_CONFIG
+        value: {{ kindIs "string" . | ternary . (toYaml .) | quote }}
+      {{- end }}
       {{- end }}
       {{- end }}
       - name: CONFIG_CHECKSUM

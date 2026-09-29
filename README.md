@@ -184,6 +184,13 @@ gitlabSetup:
     runner:
       project: ai/agent-runner
       inputs: {tags: [ai-agent]}            # optional component inputs
+      extraIncludes:                        # optional, appended to `include:`
+        - project: infra/jobs/gitlab-components/helpers
+          ref: v1.0.0
+          file: .gitlab-ci/include.yml
+      extraConfig: |                        # optional top-level YAML, kept as is
+        ai_webhook_handler:                 # = the component's job-name input: merged with the agent job
+          extends: [.proxy_setup]
 additionalEnvs:                             # only if the setup Job needs a proxy to reach cloneUrl
   - HTTPS_PROXY: "http://proxy.corp:3128"
   - NO_PROXY: ".svc,gitlab.corp"
