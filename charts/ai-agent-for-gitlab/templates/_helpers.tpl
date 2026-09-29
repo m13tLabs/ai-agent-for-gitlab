@@ -113,6 +113,18 @@ Trigger phrase (TRIGGER_PHRASE): agent.triggerPhrase when set, otherwise
 {{- end }}
 {{- end }}
 
+{{/*
+Runner project (AI_RUNNER_PROJECT): agent.runnerProject when set, otherwise
+the one gitlabSetup.centralPipeline creates, else "" (each project's own pipeline).
+*/}}
+{{- define "ai-agent.runnerProject" -}}
+{{- if .Values.agent.runnerProject }}
+{{- .Values.agent.runnerProject }}
+{{- else if and .Values.gitlabSetup.enabled .Values.gitlabSetup.centralPipeline.enabled }}
+{{- .Values.gitlabSetup.centralPipeline.runner.project }}
+{{- end }}
+{{- end }}
+
 {{- define "ai-agent.redisEnabled" -}}
 {{- if and .Values.rateLimiting.enabled .Values.redis.enabled }}true{{- end }}
 {{- end }}
@@ -217,6 +229,24 @@ containers:
         value: {{ $setup.token.renewBeforeDays | toString | quote }}
       - name: RESTART_DEPLOYMENT
         value: {{ include "ai-agent.fullname" . }}
+      {{- with $setup.centralPipeline }}
+      {{- if .enabled }}
+      - name: CENTRAL_PIPELINE_ENABLED
+        value: "true"
+      - name: CENTRAL_PIPELINE_VISIBILITY
+        value: {{ .visibility | quote }}
+      - name: COMPONENT_PROJECT
+        value: {{ required "gitlabSetup.centralPipeline.component.project is required" .component.project | quote }}
+      - name: COMPONENT_CLONE_URL
+        value: {{ required "gitlabSetup.centralPipeline.component.cloneUrl is required" .component.cloneUrl | quote }}
+      - name: COMPONENT_REF
+        value: {{ .component.ref | quote }}
+      - name: RUNNER_PROJECT
+        value: {{ required "gitlabSetup.centralPipeline.runner.project is required" .runner.project | quote }}
+      - name: RUNNER_COMPONENT_INPUTS
+        value: {{ .runner.inputs | default dict | toJson | quote }}
+      {{- end }}
+      {{- end }}
       - name: CONFIG_CHECKSUM
         value: {{ include "ai-agent.setupConfigChecksum" . | quote }}
       # Lets fetch() trust the in-cluster API server certificate.

@@ -10,6 +10,12 @@
 //   bot      review-agent (7); its stored token is valid, so no rotation
 //   deployment web: its pods last ran with CONFIG_CHECKSUM "chart-sum" and
 //            WEBHOOK_SECRET "hook-secret"
+//   central pipeline (only looked up by path, not listed): group ai (20);
+//            component project ai/ai-agent-for-gitlab (30, imported, default
+//            branch develop, not yet a catalog resource) unless
+//            MOCK_NO_COMPONENT is set, then POST /projects creates it (31)
+//            with its import still running; runner project ai/agent-runner is
+//            missing and created as 32
 import { createHash } from "node:crypto";
 import http from "node:http";
 
@@ -29,11 +35,36 @@ const projects = [
 const inherited = { 10: { id: BOT_ID, access_level: 30 } };
 const projectHooks = { 10: [{ id: 99, name: "ai-agent-for-gitlab", url: "http://old" }] };
 
+const centralGroups = [{ id: 20, full_path: "ai" }];
+const centralProjects = process.env.MOCK_NO_COMPONENT
+  ? []
+  : [{ id: 30, path_with_namespace: "ai/ai-agent-for-gitlab", description: "old", default_branch: "develop" }];
+const imports = { 30: "finished", 31: "scheduled" };
+
 const writes = [];
 
-function route(method, url) {
+function route(method, url, body) {
   const path = url.pathname;
   let m;
+  if (method === "POST" && path === "/api/graphql") {
+    return JSON.parse(body).query.startsWith("query")
+      ? [200, { data: { ciCatalogResource: null } }]
+      : [200, { data: { catalogResourcesCreate: { errors: [] } } }];
+  }
+  if (method === "POST" && path === "/api/v4/projects") {
+    const { name } = JSON.parse(body);
+    return [201, name === "agent-runner" ? { id: 32, default_branch: null } : { id: 31 }];
+  }
+  if ((m = path.match(/^\/api\/v4\/groups\/([^/]+)$/))) {
+    const g = centralGroups.find((g) => g.full_path === decodeURIComponent(m[1]));
+    if (g) return [200, g];
+  }
+  if ((m = path.match(/^\/api\/v4\/projects\/([^/]+)$/))) {
+    const key = decodeURIComponent(m[1]);
+    const p = centralProjects.find((p) => p.path_with_namespace === key || String(p.id) === key);
+    if (p) return [200, p];
+  }
+  if ((m = path.match(/^\/api\/v4\/projects\/(\d+)\/import$/))) return [200, { import_status: imports[m[1]] ?? "none" }];
   if (path === "/api/v4/user") return [200, { username: "root", is_admin: true }];
   if (path === "/api/v4/users") return [200, [{ id: BOT_ID, username: "review-agent", name: "AI Agent", email: "" }]];
   if (path === "/api/v4/groups") return [200, groups];
@@ -73,7 +104,7 @@ const server = http.createServer((req, res) => {
   req.on("end", () => {
     const url = new URL(req.url, "http://mock");
     if (req.method !== "GET") writes.push(`${req.method} ${url.pathname} ${body}`);
-    const [status, payload] = route(req.method, url);
+    const [status, payload] = route(req.method, url, body);
     res.writeHead(status, { "Content-Type": "application/json" });
     res.end(JSON.stringify(payload));
   });

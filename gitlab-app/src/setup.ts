@@ -18,6 +18,10 @@
 //   6. webhook Deployment restarted when the chart's gitlab.*/secrets.* values
 //      or the webhook secret in use changed (CONFIG_CHECKSUM + WEBHOOK_SECRET
 //      vs. the annotation the pods last ran with)
+//   7. optional (CENTRAL_PIPELINE_ENABLED, runner mode): the component project,
+//      imported once from COMPONENT_CLONE_URL and made a CI/CD Catalog
+//      resource, and the runner project whose .gitlab-ci.yml includes its
+//      agent-runner component; the bot is Owner of both
 //
 // SETUP_GROUPS / SETUP_PROJECTS are JSON arrays of glob patterns (`*`, `?`,
 // matched case-insensitively against the full path; `*` also matches `/`) or
@@ -62,6 +66,18 @@ export interface SetupConfig {
   // in use; "" disables the check.
   configChecksum: string;
   kube: { apiUrl: string; namespace: string; token: string };
+  // Runner mode: a project with the agent-runner CI/CD component, imported
+  // from cloneUrl, and the runner project including it. Full paths; their
+  // groups must exist. `ref` "" = the component project's default branch.
+  centralPipeline: {
+    enabled: boolean;
+    componentProject: string;
+    cloneUrl: string;
+    ref: string;
+    runnerProject: string;
+    inputs: Json;
+    visibility: string;
+  };
 }
 
 export interface Target {
@@ -120,6 +136,11 @@ export async function loadConfig(env = process.env): Promise<SetupConfig> {
   const groups = parseTargets("SETUP_GROUPS", env.SETUP_GROUPS, accessLevel, false);
   const projects = parseTargets("SETUP_PROJECTS", env.SETUP_PROJECTS, accessLevel, !hookEnabled);
   const needsHookTarget = hookEnabled || projects.length > 0;
+  const centralPipeline = env.CENTRAL_PIPELINE_ENABLED === "true";
+  const inputs = JSON.parse(env.RUNNER_COMPONENT_INPUTS || "{}");
+  if (typeof inputs !== "object" || inputs === null || Array.isArray(inputs)) {
+    throw new Error(`RUNNER_COMPONENT_INPUTS must be a JSON object, got ${env.RUNNER_COMPONENT_INPUTS}`);
+  }
 
   return {
     gitlabUrl: (env.GITLAB_URL || "https://gitlab.com").replace(/\/+$/, ""),
@@ -154,6 +175,15 @@ export async function loadConfig(env = process.env): Promise<SetupConfig> {
         `https://${requireEnv("KUBERNETES_SERVICE_HOST")}:${env.KUBERNETES_SERVICE_PORT || "443"}`,
       namespace: env.K8S_NAMESPACE || (await readIfExists(`${SA_DIR}/namespace`)),
       token: env.K8S_TOKEN || (await readIfExists(`${SA_DIR}/token`)),
+    },
+    centralPipeline: {
+      enabled: centralPipeline,
+      componentProject: centralPipeline ? requireEnv("COMPONENT_PROJECT") : "",
+      cloneUrl: centralPipeline ? requireEnv("COMPONENT_CLONE_URL") : "",
+      ref: env.COMPONENT_REF || "",
+      runnerProject: centralPipeline ? requireEnv("RUNNER_PROJECT") : "",
+      inputs,
+      visibility: env.CENTRAL_PIPELINE_VISIBILITY || "private",
     },
   };
 }
@@ -298,7 +328,23 @@ function gitlab(cfg: SetupConfig) {
     return items;
   };
 
-  return { request, list };
+  // The CI/CD Catalog has no REST API. Throws on HTTP or GraphQL errors.
+  const graphql = async (query: string, variables: Json): Promise<Json> => {
+    const res = await fetchOrExplain(`${cfg.gitlabUrl}/api/graphql`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${cfg.adminToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ query, variables }),
+    });
+    const text = await res.text();
+    const body = text ? JSON.parse(text) : {};
+    if (!res.ok || body.errors?.length) {
+      const reason = body.errors?.map((e: Json) => e.message).join("; ") || `${res.status} ${text.slice(0, 300)}`;
+      throw new GitLabError(res.status, `GitLab GraphQL failed: ${reason}`);
+    }
+    return body.data ?? {};
+  };
+
+  return { request, list, graphql };
 }
 
 function kube(cfg: SetupConfig) {
@@ -559,6 +605,198 @@ async function ensureSystemHook(cfg: SetupConfig, gl: ReturnType<typeof gitlab>)
   }
 }
 
+// ---------------------------------------------------------------------------
+// Central pipeline (runner mode)
+// ---------------------------------------------------------------------------
+
+const COMPONENT_NAME = "agent-runner";
+const OWNER = 50;
+const MANAGED_NOTE = "Managed by the ai-agent-for-gitlab setup (Helm value gitlabSetup.centralPipeline)";
+
+// Browsable link for a clone URL: credentials (a token for a private source)
+// and the `.git` suffix dropped.
+export function sourceLink(cloneUrl: string): string {
+  try {
+    const url = new URL(cloneUrl);
+    url.username = "";
+    url.password = "";
+    return url.toString().replace(/\/$/, "").replace(/\.git$/, "");
+  } catch {
+    return cloneUrl;
+  }
+}
+
+export function runnerCiConfig(componentProject: string, ref: string, inputs: Json): string {
+  const lines = [
+    `# ${MANAGED_NOTE}; edits here are overwritten.`,
+    "# Component inputs: gitlabSetup.centralPipeline.runner.inputs",
+    "include:",
+    `  - component: $CI_SERVER_FQDN/${componentProject}/${COMPONENT_NAME}@${ref}`,
+  ];
+  // JSON is valid YAML (flow style), which keeps this free of a YAML dependency.
+  if (Object.keys(inputs).length) lines.push(`    inputs: ${JSON.stringify(inputs)}`);
+  return `${lines.join("\n")}\n`;
+}
+
+export function runnerReadme(cfg: SetupConfig): string {
+  const cp = cfg.centralPipeline;
+  return `# AI agent runner
+
+Runs the [AI agent for GitLab](${sourceLink(cp.cloneUrl)}) for every project (runner mode). The webhook app starts one pipeline here per \`@${cfg.bot.username}\` mention or review request and passes the target project as pipeline variables (\`AI_PROJECT_ID\`, \`AI_PROJECT_PATH\`, \`AI_BRANCH\`). The agent clones that project itself, so the projects need no CI changes.
+
+- \`.gitlab-ci.yml\` includes the \`${COMPONENT_NAME}\` CI/CD component from [${cp.componentProject}](${cfg.gitlabUrl}/${cp.componentProject}). ${MANAGED_NOTE}: edits to it are overwritten; set the component inputs in the Helm values instead.
+- Add these CI/CD variables here (Settings → CI/CD → Variables, not protected), or let a dedicated runner inject them:
+  - \`GITLAB_TOKEN\`: a token of @${cfg.bot.username}
+  - the provider keys of the model, e.g. \`ANTHROPIC_API_KEY\`, or \`AWS_ACCESS_KEY_ID\`, \`AWS_SECRET_ACCESS_KEY\` and \`AWS_REGION\` for Amazon Bedrock
+- The pipeline variables here contain prompts and discussion excerpts of every project the agent works on. Keep this project's membership small.
+
+This README is created once and not overwritten.
+`;
+}
+
+async function findProject(gl: ReturnType<typeof gitlab>, path: string): Promise<Json | null> {
+  try {
+    return await gl.request("GET", `/projects/${encodeURIComponent(path)}`);
+  } catch (e) {
+    if (e instanceof GitLabError && e.status === 404) return null;
+    throw e;
+  }
+}
+
+// New project at `path` in its (existing) parent group.
+async function createProject(gl: ReturnType<typeof gitlab>, path: string, attributes: Json): Promise<Json> {
+  const slash = path.lastIndexOf("/");
+  if (slash < 1) throw new Error(`Project path "${path}" needs a group, e.g. ai/${path}`);
+  const groupPath = path.slice(0, slash);
+  const name = path.slice(slash + 1);
+  let group: Json;
+  try {
+    group = await gl.request("GET", `/groups/${encodeURIComponent(groupPath)}`);
+  } catch (e) {
+    if (e instanceof GitLabError && e.status === 404) throw new Error(`Group "${groupPath}" for project ${path} not found`);
+    throw e;
+  }
+  const project = await gl.request("POST", "/projects", { name, path: name, namespace_id: group.id, ...attributes });
+  logger.info("Created project", { project: path });
+  return project;
+}
+
+// Component project, imported once from cloneUrl (GitLab CE has no pull
+// mirroring, so later changes need a new import). Returns it once the import
+// is done, null while it's still running.
+async function ensureComponentProject(cfg: SetupConfig, gl: ReturnType<typeof gitlab>, botId: number): Promise<Json | null> {
+  const cp = cfg.centralPipeline;
+  const description =
+    `CI/CD component "${COMPONENT_NAME}" of the AI agent for GitLab, imported from ${sourceLink(cp.cloneUrl)}. ${MANAGED_NOTE}.`;
+
+  let project = await findProject(gl, cp.componentProject);
+  if (!project) {
+    project = await createProject(gl, cp.componentProject, {
+      import_url: cp.cloneUrl,
+      description,
+      visibility: cp.visibility,
+    });
+  } else if (project.description !== description) {
+    await gl.request("PUT", `/projects/${project.id}`, { description });
+    logger.info("Updated component project description", { project: cp.componentProject });
+  }
+  await ensureMember(gl, "projects", project.id, cp.componentProject, botId, OWNER);
+
+  const { import_status: status, import_error: error } = await gl.request("GET", `/projects/${project.id}/import`);
+  if (status === "failed") {
+    throw new Error(`Import of ${cp.componentProject} from ${sourceLink(cp.cloneUrl)} failed: ${error}`);
+  }
+  // "none": created some other way (e.g. pushed), usable as is.
+  if (status !== "finished" && status !== "none") {
+    logger.info("Component project import still running, finishing on the next run", { project: cp.componentProject, status });
+    return null;
+  }
+
+  await ensureCatalogResource(gl, cp.componentProject);
+  // Re-read: default_branch is only known once the repository is imported.
+  return gl.request("GET", `/projects/${project.id}`);
+}
+
+// Marks the project as a CI/CD Catalog resource (Settings > General > "CI/CD
+// Catalog project"); needs the description set above.
+async function ensureCatalogResource(gl: ReturnType<typeof gitlab>, path: string) {
+  try {
+    const data = await gl.graphql("query($p: ID!) { ciCatalogResource(fullPath: $p) { id } }", { p: path });
+    if (data.ciCatalogResource) return;
+  } catch {
+    // Older GitLab without this query: let the mutation decide.
+  }
+  const data = await gl.graphql(
+    "mutation($p: ID!) { catalogResourcesCreate(input: { projectPath: $p }) { errors } }",
+    { p: path }
+  );
+  const errors: string[] = data.catalogResourcesCreate?.errors ?? [];
+  if (errors.some((e) => /already/i.test(e))) return;
+  if (errors.length) throw new Error(`Could not make ${path} a CI/CD Catalog resource: ${errors.join("; ")}`);
+  logger.info("Enabled CI/CD Catalog resource", { project: path });
+}
+
+// File content on `ref`, null when it (or the whole repository) doesn't exist.
+async function fileContent(gl: ReturnType<typeof gitlab>, projectId: number, file: string, ref: string): Promise<string | null> {
+  try {
+    const f = await gl.request(
+      "GET",
+      `/projects/${projectId}/repository/files/${encodeURIComponent(file)}?ref=${encodeURIComponent(ref)}`
+    );
+    return Buffer.from(f.content, "base64").toString("utf8");
+  } catch (e) {
+    if (e instanceof GitLabError && e.status === 404) return null;
+    throw e;
+  }
+}
+
+// Runner project with a .gitlab-ci.yml including the component (kept in sync)
+// and a README (created once).
+async function ensureRunnerProject(cfg: SetupConfig, gl: ReturnType<typeof gitlab>, botId: number, component: Json) {
+  const cp = cfg.centralPipeline;
+  const project =
+    (await findProject(gl, cp.runnerProject)) ??
+    (await createProject(gl, cp.runnerProject, {
+      description: `Runs the AI agent for GitLab for every project, with the CI/CD component from ${cp.componentProject}. ${MANAGED_NOTE}.`,
+      visibility: cp.visibility,
+    }));
+  await ensureMember(gl, "projects", project.id, cp.runnerProject, botId, OWNER);
+
+  const ref = cp.ref || component.default_branch;
+  if (!ref) throw new Error(`${cp.componentProject} has no default branch yet; set gitlabSetup.centralPipeline.component.ref`);
+
+  // A new project has no branch yet; the first commit creates it.
+  const branch = project.default_branch || "main";
+  const files = [
+    { path: ".gitlab-ci.yml", content: runnerCiConfig(cp.componentProject, ref, cp.inputs), managed: true },
+    { path: "README.md", content: runnerReadme(cfg), managed: false },
+  ];
+  const actions: Json[] = [];
+  for (const file of files) {
+    const current = await fileContent(gl, project.id, file.path, branch);
+    if (current === null) actions.push({ action: "create", file_path: file.path, content: file.content });
+    else if (file.managed && current !== file.content) actions.push({ action: "update", file_path: file.path, content: file.content });
+  }
+  if (!actions.length) return;
+
+  await gl.request("POST", `/projects/${project.id}/repository/commits`, {
+    branch,
+    commit_message: `Set up the AI agent runner (${actions.map((a) => a.file_path).join(", ")})`,
+    actions,
+  });
+  logger.info("Updated runner project files", { project: cp.runnerProject, branch, files: actions.map((a) => a.file_path) });
+}
+
+async function ensureCentralPipeline(cfg: SetupConfig, gl: ReturnType<typeof gitlab>, botId: number) {
+  const component = await ensureComponentProject(cfg, gl, botId);
+  if (!component) return;
+  await ensureRunnerProject(cfg, gl, botId, component);
+  logger.info("Central pipeline in sync", {
+    component: cfg.centralPipeline.componentProject,
+    runner: cfg.centralPipeline.runnerProject,
+  });
+}
+
 // Returns true when a new token was stored (and the Deployment restarted).
 async function ensureBotToken(cfg: SetupConfig, gl: ReturnType<typeof gitlab>, userId: number): Promise<boolean> {
   const k8s = kube(cfg);
@@ -692,6 +930,9 @@ export async function runSetup(cfg: SetupConfig) {
   await ensureProjects(cfg, gl, bot.id);
   const restarted = await ensureBotToken(cfg, gl, bot.id);
   if (!restarted) await ensureDeploymentConfig(cfg);
+  // Last, so a failure here (e.g. a missing group) fails the Job only after
+  // the token rotation is done.
+  if (cfg.centralPipeline.enabled) await ensureCentralPipeline(cfg, gl, bot.id);
   logger.info("GitLab setup complete", { bot: cfg.bot.username });
 }
 

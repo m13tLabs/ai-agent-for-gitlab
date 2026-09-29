@@ -122,3 +122,52 @@ assert_output_lacks() {
   assert_output_contains '"token":"regenerated"'
   assert_output_contains "PATCH /apis/apps/v1/namespaces/test/deployments/web"
 }
+
+# setup_run with the central pipeline on (see the mock for its projects)
+central_run() {
+  setup_run -e CENTRAL_PIPELINE_ENABLED=true \
+    -e COMPONENT_PROJECT=ai/ai-agent-for-gitlab \
+    -e COMPONENT_CLONE_URL=https://user:secret@github.com/m13tLabs/ai-agent-for-gitlab.git \
+    -e RUNNER_PROJECT=ai/agent-runner \
+    -e SETUP_GROUPS='[]' -e SETUP_PROJECTS='[]' "$@"
+}
+
+@test "central pipeline: component made a catalog resource, runner project created with the bot as Owner" {
+  run central_run -e RUNNER_COMPONENT_INPUTS='{"tags":["ai-agent"]}'
+  [ "$status" -eq 0 ]
+  assert_output_contains "OK"
+  # Existing component project: description (link without credentials) synced, bot Owner, catalog on.
+  assert_output_contains 'PUT /api/v4/projects/30 {"description":"CI/CD component \"agent-runner\" of the AI agent for GitLab, imported from https://github.com/m13tLabs/ai-agent-for-gitlab.'
+  assert_output_contains 'POST /api/v4/projects/30/members {"user_id":7,"access_level":50}'
+  assert_output_contains 'catalogResourcesCreate(input: { projectPath: $p })'
+  assert_output_lacks "secret@"
+  # Runner project created in group ai (20), bot Owner, files on a new main branch.
+  assert_output_contains 'POST /api/v4/projects {"name":"agent-runner","path":"agent-runner","namespace_id":20'
+  assert_output_contains 'POST /api/v4/projects/32/members {"user_id":7,"access_level":50}'
+  assert_output_contains 'POST /api/v4/projects/32/repository/commits {"branch":"main"'
+  assert_output_contains 'component: $CI_SERVER_FQDN/ai/ai-agent-for-gitlab/agent-runner@develop\n    inputs: {\"tags\":[\"ai-agent\"]}'
+  assert_output_contains '"action":"create","file_path":"README.md"'
+}
+
+@test "central pipeline: component ref overrides the default branch" {
+  run central_run -e COMPONENT_REF=v0.5.0
+  [ "$status" -eq 0 ]
+  assert_output_contains 'agent-runner@v0.5.0'
+}
+
+@test "central pipeline: new component project is imported, runner waits for the import" {
+  run central_run -e MOCK_NO_COMPONENT=1
+  [ "$status" -eq 0 ]
+  assert_output_contains "OK"
+  assert_output_contains '"import_url":"https://user:secret@github.com/m13tLabs/ai-agent-for-gitlab.git"'
+  assert_output_contains '"visibility":"private"'
+  assert_output_contains 'POST /api/v4/projects/31/members {"user_id":7,"access_level":50}'
+  # Import still running: no catalog, no runner project yet (next CronJob run).
+  assert_output_lacks "graphql"
+  assert_output_lacks "agent-runner\",\"path\""
+}
+
+@test "central pipeline: missing settings fail the setup" {
+  run setup_run -e CENTRAL_PIPELINE_ENABLED=true -e COMPONENT_PROJECT=ai/x
+  assert_output_contains "FAILED: Missing COMPONENT_CLONE_URL"
+}

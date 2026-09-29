@@ -125,6 +125,31 @@ gitlabSetup:
     expiryDays: 90
     # -- Rotate the bot token this many days before it expires
     renewBeforeDays: 14
+  # Runner mode, set up in GitLab: the component project (imported from
+  # `component.cloneUrl`, made a CI/CD Catalog resource) and the runner
+  # project whose .gitlab-ci.yml includes its agent-runner component. The bot
+  # becomes Owner of both. `runner.project` is used as agent.runnerProject
+  # unless that is set.
+  centralPipeline:
+    # -- Create and maintain the component and runner projects
+    enabled: false
+    # -- Visibility of both projects (private, internal or public)
+    visibility: private
+    component:
+      # -- Full path of the component project; its group must exist
+      project: ai/ai-agent-for-gitlab
+      # -- Git URL the component project is imported from, once (GitLab CE
+      # can't pull-mirror; delete the project to re-import). A private source
+      # needs credentials in the URL, which are left out of the description.
+      cloneUrl: https://github.com/m13tLabs/ai-agent-for-gitlab.git
+      # -- Ref of the component the runner project includes (branch, tag or
+      # SHA); empty = the component project's default branch
+      ref: ""
+    runner:
+      # -- Full path of the runner project; its group must exist
+      project: ai/agent-runner
+      # -- Inputs for the agent-runner component, e.g. `{tags: [ai-agent]}`
+      inputs: {}
   # -- CronJob schedule for re-syncing (new groups/projects, token rotation)
   schedule: "17 * * * *"
   resources:

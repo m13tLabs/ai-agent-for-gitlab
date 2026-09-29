@@ -170,6 +170,29 @@ Setup:
 2. Add `GITLAB_TOKEN` and the provider keys (see [Create Pipeline](#create-pipeline)) as CI/CD variables of the runner project, not protected. Or let a dedicated runner inject them from a Kubernetes Secret, and select it with the `tags` input.
 3. Point the webhook app at it: `AI_RUNNER_PROJECT=ai/agent-runner` (chart: `agent.runnerProject`).
 
+With the Helm chart's `gitlabSetup`, steps 1 and 3 are automated by `gitlabSetup.centralPipeline`:
+
+```yaml
+gitlabSetup:
+  enabled: true
+  centralPipeline:
+    enabled: true
+    component:
+      project: ai/ai-agent-for-gitlab       # group "ai" must exist
+      cloneUrl: https://github.com/m13tLabs/ai-agent-for-gitlab.git
+      ref: ""                               # "" = the imported default branch; or a tag, e.g. v0.5.0
+    runner:
+      project: ai/agent-runner
+      inputs: {tags: [ai-agent]}            # optional component inputs
+```
+
+- **Component project:** imported once from `cloneUrl`, with a description that links to the source (credentials in the URL are left out), and made a CI/CD Catalog resource. GitLab CE can't pull-mirror, so later changes to the source aren't picked up. Delete the project to re-import it, or pin `component.ref` to a tag the import contains.
+- **Runner project:** created with a `.gitlab-ci.yml` that includes `$CI_SERVER_FQDN/<component project>/agent-runner@<ref>` with your `inputs`, and a README describing the setup. The setup Job keeps `.gitlab-ci.yml` in sync (edits there are overwritten) and creates the README only once.
+- **Bot:** becomes Owner of both projects, so it can run pipelines on the runner project's protected default branch.
+- **Webhook:** `runner.project` is used as `agent.runnerProject` unless you set that yourself.
+- **Import timing:** the import runs in the background. The runner project is created on the next CronJob run after the import finished, within the `gitlabSetup.schedule` interval. A failed import fails the setup Job with GitLab's import error.
+- **Still manual:** step 2, the CI/CD variables.
+
 Notes:
 
 - The bot behind `GITLAB_TOKEN` needs Developer access to every target project. `gitlabSetup` grants it.
@@ -287,6 +310,7 @@ On self-managed GitLab, the chart can configure GitLab itself. Set `gitlabSetup.
 - **System hook**: registers a system hook for merge request events pointing at the release's in-cluster Service. Set `gitlabSetup.systemHook.url` to the ingress URL when GitLab runs outside the cluster. Reviewer/assignee reviews then work on every project without per-project webhooks.
 - **Project webhooks**: for the projects matching `gitlabSetup.projects` (default `["*"]`: every project), adds the bot as member (unless it already inherits the role) and creates a project webhook with **Comments** enabled, so `@ai` mentions work. It uses the same URL, secret and TLS setting as the system hook, and sends merge request events too only when the system hook is disabled.
 - **Bot token**: creates the bot's access token (`api` scope, 90 days) and stores it in the Secret `<release>-bot-token`, which the webhook pods use as `GITLAB_TOKEN`. It's rotated 14 days before expiry, and the pods are restarted to load it.
+- **Central pipeline** (optional, `gitlabSetup.centralPipeline.enabled`): creates the component and runner projects for [runner mode](#runner-mode-one-central-runner-project), with the bot as Owner.
 
 ```yaml
 gitlab:
