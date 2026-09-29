@@ -4,17 +4,21 @@
   "private": true,
   "type": "module",
   "bin": {
-    "ai-runner": "./ai-runner.js"
+    "ai-runner": "./ai-runner.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test \"test/**/*.test.ts\""
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.4",
-    "tsx": "^4.20.5",
     "zod": "^4.0.0"
   },
   "engines": {
-    "node": ">=24"
+    "node": ">=24.2.0"
   },
   "devDependencies": {
-    "@types/node": "^24.13.6"
+    "@types/node": "^24.13.6",
+    "typescript": "^7.0.2"
   }
 }

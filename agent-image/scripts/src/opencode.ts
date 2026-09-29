@@ -1,19 +1,25 @@
-import logger from "./logger.js";
+import logger from "./logger.ts";
 import { spawn } from "node:child_process";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
-import { writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
+import { writeFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
+import type { Context } from "./types.ts";
 
-export async function runOpencode(context, prompt) {
+export interface McpServerConfig {
+  name: string;
+  command: string[];
+  env: Record<string, string | undefined>;
+}
+
+export async function runOpencode(context: Context, prompt: string | undefined): Promise<void> {
   logger.start("Running opencode via cli...");
 
-  const configuration = startMCPServer(context);
-  setOpenCodeMCPServerConfiguration(configuration);
+  setOpenCodeMCPServerConfiguration(mcpServerConfig(context));
 
-  const [providerID, modelID] = context.opencodeModel.split('/');
+  const model = context.opencodeModel ?? "";
+  const [providerID, modelID] = model.split("/");
   if (!providerID || !modelID) {
-    throw new Error(`Invalid OPENCODE_MODEL format: ${context.opencodeModel}. Expected format: provider/model`);
+    throw new Error(`Invalid OPENCODE_MODEL format: ${model}. Expected format: provider/model`);
   }
 
   logger.info(`Using model: ${modelID} from provider: ${providerID}`);
@@ -21,14 +27,7 @@ export async function runOpencode(context, prompt) {
   logger.info("Sending prompt to model ... this may take a while");
 
   // Use the "opencode" CLI to send the prompt and get the response
-  const cliArgs = [
-    "run",
-    "--print-logs",
-    "--model", 
-    context.opencodeModel,
-    "--log-level",
-    "ERROR"
-  ];
+  const cliArgs = ["run", "--print-logs", "--model", model, "--log-level", "ERROR"];
 
   logger.info(`Running: opencode ${cliArgs.join(" ")}`);
 
@@ -46,13 +45,19 @@ export async function runOpencode(context, prompt) {
 // Only the tail is kept for error parsing; the job log still gets everything.
 const MAX_CAPTURED_OUTPUT = 64 * 1024;
 
+export interface CliResult {
+  code: number | null;
+  signal: NodeJS.Signals | null;
+  output: string;
+}
+
 // Runs the CLI with stdout/stderr passed through to the job log and also
 // captured, so a failure can be reported with opencode's own error message.
-function runCli(command, args, input) {
+export function runCli(command: string, args: string[], input: string): Promise<CliResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { stdio: ["pipe", "pipe", "pipe"] });
     let output = "";
-    const capture = (target) => (chunk) => {
+    const capture = (target: NodeJS.WritableStream) => (chunk: Buffer) => {
       target.write(chunk);
       output = (output + chunk.toString()).slice(-MAX_CAPTURED_OUTPUT);
     };
@@ -60,6 +65,9 @@ function runCli(command, args, input) {
     child.stderr.on("data", capture(process.stderr));
     child.on("error", reject);
     child.on("close", (code, signal) => resolve({ code, signal, output }));
+    // A CLI that exits before reading the prompt makes this write fail with
+    // EPIPE; its exit code (via "close") is what gets reported then.
+    child.stdin.on("error", () => {});
     child.stdin.end(input);
   });
 }
@@ -68,7 +76,7 @@ function runCli(command, args, input) {
 //   Error: Forbidden: {"Message":"Authentication failed: ..."}
 // becomes "Forbidden: Authentication failed: ...". Falls back to the error of
 // the last `level=ERROR` log line. Returns "" when nothing matches.
-export function parseOpencodeError(output) {
+export function parseOpencodeError(output: string): string {
   const lines = output.replace(/\x1b\[[0-9;]*m/g, "").split("\n").map((l) => l.trim());
 
   const errorLine = lines.filter((l) => l.startsWith("Error: ")).pop();
@@ -87,7 +95,7 @@ export function parseOpencodeError(output) {
 }
 
 // Message field of a provider's JSON error body, whichever casing/nesting it uses.
-function apiErrorMessage(json) {
+function apiErrorMessage(json: string): string {
   try {
     const body = JSON.parse(json);
     const err = body.error ?? body;
@@ -97,82 +105,47 @@ function apiErrorMessage(json) {
   }
 }
 
-function setOpenCodeMCPServerConfiguration(mcpServerConfig) {
+export function setOpenCodeMCPServerConfiguration(mcpServerConfig: McpServerConfig, home = homedir()): void {
   logger.info("Configuring OpenCode MCP server settings...");
 
-  const configDir = join(homedir(), ".config", "opencode");
+  const configDir = join(home, ".config", "opencode");
   const configPath = join(configDir, "opencode.json");
 
   try {
-    if (!existsSync(configDir)) {
-      mkdirSync(configDir, { recursive: true });
-    }
+    mkdirSync(configDir, { recursive: true });
 
-    let config = { "$schema": "https://opencode.ai/config.json", mcp: {} };
-
-    config.mcp[mcpServerConfig.name] = {
-      type: "local",
-      command: mcpServerConfig.command,
-      environment: mcpServerConfig.env,
-      enabled: true
+    const config = {
+      $schema: "https://opencode.ai/config.json",
+      mcp: {
+        [mcpServerConfig.name]: {
+          type: "local",
+          command: mcpServerConfig.command,
+          environment: mcpServerConfig.env,
+          enabled: true,
+        },
+      },
     };
 
     writeFileSync(configPath, JSON.stringify(config, null, 2));
     logger.info(`OpenCode configuration updated at ${configPath}`);
-
   } catch (error) {
-    logger.error(`Failed to configure OpenCode MCP server: ${error.message}`);
+    logger.error(`Failed to configure OpenCode MCP server: ${(error as Error).message}`);
     // Don't throw here - let the process continue even if config fails
   }
 }
 
-function startMCPServer(context) {
-  logger.info("Starting GitLab MCP server...");
-
-  const __filename = fileURLToPath(import.meta.url);
-  const __dirname = dirname(__filename);
-  const mcpServerPath = join(__dirname, "..", "mcp", "mcp.ts");
-
-  // Set environment variables for the MCP server
-  const env = {
-    ...process.env,
-    CI_SERVER_URL: context.serverUrl,
-    GITLAB_TOKEN: context.gitlabToken,
-    CI_PROJECT_ID: context.projectId,
+// opencode starts the GitLab MCP server itself (a `local` MCP entry), with
+// this environment on top of its own.
+export function mcpServerConfig(context: Context): McpServerConfig {
+  return {
+    name: "gitlab-mcp-server",
+    command: [process.execPath, join(import.meta.dirname, "..", "mcp", "mcp.ts")],
+    env: {
+      CI_SERVER_URL: context.serverUrl,
+      GITLAB_TOKEN: context.gitlabToken,
+      CI_PROJECT_ID: context.projectId,
+      AI_RESOURCE_ID: context.resourceId,
+      AI_RESOURCE_TYPE: context.resourceType,
+    },
   };
-
-  try {
-    // Start the MCP server process
-    const mcpProcess = spawn("npx", ["tsx", mcpServerPath], {
-      stdio: ["pipe", "pipe", "pipe"],
-      env,
-      cwd: join(__dirname, "..")
-    });
-
-    mcpProcess.on("error", (error) => {
-      logger.error(`MCP server error: ${error.message}`);
-    });
-
-    mcpProcess.stderr.on("data", (data) => {
-      logger.info(`MCP server: ${data.toString().trim()}`);
-    });
-
-    logger.info("GitLab MCP server started");
-
-    // Return configuration for opencode
-    return {
-      name: "gitlab-mcp-server",
-      command: ["npx", "tsx", mcpServerPath],
-      env: {
-        CI_SERVER_URL: context.serverUrl,
-        GITLAB_TOKEN: context.gitlabToken,
-        CI_PROJECT_ID: context.projectId,
-        AI_RESOURCE_ID: context.resourceId,
-        AI_RESOURCE_TYPE: context.resourceType,
-      }
-    };
-  } catch (error) {
-    logger.error(`Failed to start MCP server: ${error.message}`);
-    throw error;
-  }
 }

@@ -57,7 +57,7 @@ in_image() {
     PATH=/tmp/fake:$PATH ai-runner one "two words" ""
   '
   [ "$status" -eq 0 ]
-  assert_output "$(printf '%s\n' '</opt/agent/ai-runner.js>' '<one>' '<two words>' '<>')"
+  assert_output "$(printf '%s\n' '</opt/agent/ai-runner.ts>' '<one>' '<two words>' '<>')"
 }
 
 @test "ai-runner without arguments passes none" {
@@ -113,40 +113,22 @@ fake_node_models_path='
   assert_output_contains "amazon-bedrock/eu.anthropic.claude-fable-5"
 }
 
-# Evaluate a JS expression against the runner modules, print the result.
-in_runner() {
-  in_image "cd /opt/agent && node --input-type=module -e '$1'"
+# The runner's logic is unit tested (agent-image/scripts/test, run by the
+# Dockerfile's test stage). These only check that its TypeScript entry points
+# run on the image's Node, which strips the types itself.
+@test "runner modules load" {
+  run --separate-stderr in_image 'cd /opt/agent && node --input-type=module -e "
+    for (const m of [\"./src/runner.ts\", \"./mcp/mcp.ts\"]) await import(m);
+    console.log(\"ok\");
+  "'
+  [ "$status" -eq 0 ]
+  assert_output "ok"
 }
 
-@test "opencode API errors are reduced to the provider's message" {
-  # Tail of a real Bedrock failure (stderr of `opencode run --print-logs`).
-  run --separate-stderr in_runner '
-    const { parseOpencodeError } = await import("./src/opencode.js");
-    const log = [
-      "timestamp=2026-09-29T05:19:44.994Z level=ERROR message=\"stream error\" providerID=amazon-bedrock error.error=\"AI_APICallError: Forbidden\"",
-      "Error: Forbidden: {\"Message\":\"Authentication failed: Please make sure your API Key is valid.\"}",
-    ].join("\n");
-    console.log(parseOpencodeError(log));
-    console.log(parseOpencodeError("level=ERROR message=x error.error=\"AI_APICallError: Too Many Requests\""));
-    console.log(parseOpencodeError("Error: {\"error\":{\"type\":\"x\",\"message\":\"model not found\"}}"));
-    console.log("[" + parseOpencodeError("all good") + "]");
-  '
-  assert_output "$(printf '%s\n' \
-    'Forbidden: Authentication failed: Please make sure your API Key is valid.' \
-    'AI_APICallError: Too Many Requests' \
-    'model not found' \
-    '[]')"
-}
-
-@test "error comment links the failed job" {
-  run --separate-stderr in_runner '
-    const { failedJobLink } = await import("./src/runner.js");
-    console.log(failedJobLink({ CI_JOB_URL: "https://gl/j/1", CI_PIPELINE_URL: "https://gl/p/9", CI_PIPELINE_IID: "9" }));
-    console.log(failedJobLink({}));
-  '
-  assert_output "$(printf '%s\n' \
-    'See the [failed job](https://gl/j/1) of [pipeline #9](https://gl/p/9) for details.' \
-    'Please check the pipeline logs for details.')"
+@test "MCP server runs and fails fast without GITLAB_TOKEN" {
+  run in_image 'node /opt/agent/mcp/mcp.ts'
+  [ "$status" -eq 1 ]
+  assert_output_contains "GITLAB_TOKEN and CI_PROJECT_ID environment variables are required"
 }
 
 @test "carries the OCI source label" {
