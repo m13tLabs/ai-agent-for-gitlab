@@ -1,4 +1,31 @@
 
+## [0.7.0](https://github.com/m13tLabs/ai-agent-for-gitlab/compare/v0.5.0...v0.7.0) (2026-09-29)
+
+### Dependency Updates
+
+* **deps:** Update dependency hono to v4.13.10 ([bc0a191](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/bc0a1915d577c914b94fa34f99b699e2dbc1cf5e))
+
+* **deps:** Update dependency @modelcontextprotocol/sdk to v1.31.0 ([b836dee](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/b836dee00cc62320a3b973bc2094d07b226bd37b))
+
+
+
+### Features
+
+* **Gitlab:** Improve error handling ([80eea3d](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/80eea3d220e8545676ecf0f578ecd05e9d3b6f9f))
+
+* **OpenCode:** Allow to disable model fetch ([44cf900](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/44cf900a683897894c39709a4ea9c70a6ed4c39d))
+
+* **Gitlab:** Improve error handling, show error details in source comment ([6657df9](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/6657df985882f54da1c33c59eb30396a54235501))
+
+* **OpenCode:** Validate models on pod start ([89f49a0](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/89f49a0795a67d40f06c1d94d8637adeb9f0deb8))
+
+* **Gitlab:** Auto-create pipeline projects ([8a59b46](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/8a59b4636d8f2bc08f84656301bfe75a7b622202))
+
+* **Gitlab:** Auto-configure git mirroring if Gitlab Editions supports ([3551a00](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/3551a003b36883f7b68582587cb40cfa43752692))
+
+
+
+
 ## [0.6.0](https://github.com/m13tLabs/ai-agent-for-gitlab/compare/v0.5.0...v0.6.0) (2026-09-28)
 
 ### Dependency Updates
