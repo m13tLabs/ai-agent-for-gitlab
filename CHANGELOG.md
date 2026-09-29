@@ -1,4 +1,37 @@
 
+## [0.7.2](https://github.com/m13tLabs/ai-agent-for-gitlab/compare/v0.7.0...v0.7.2) (2026-09-29)
+
+### Bug Fixes
+
+* **Gitlab:** Correcting artifacts collection ([006f2e2](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/006f2e2232ade9d95799394f473348303bf2a95d))
+
+* **Deployment:** Allow additional env vars, e.g. for proxy usage ([1857d74](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/1857d74a06d244ecd8e39383a18e8bc3cef66948))
+
+* **Gitlab:** Clone pipeline component via cron and push ([ae6ccb3](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/ae6ccb30a502e0b2cde4701b07a04a180af79534))
+
+
+
+### Dependency Updates
+
+* **deps:** Update dependency hono to v4.13.11 ([a9e74be](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/a9e74be82e1268240f7868519589ae40e489c5ac))
+
+* **deps:** Update dependency @hono/node-server to v2.1.3 ([103aab0](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/103aab0bf5cb8fb94dfe00d3a3fad8cf47d6ad69))
+
+
+
+### Features
+
+* **Gitlab:** Split image + version into separate inputs ([c681b3d](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/c681b3ddc530ae715e077fa1e984c9a9afe0bad8))
+
+
+
+### Refactoring
+
+* Rewrite agent to typescript ([a9decea](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/a9decea9c7f18e6d403a78f00eab2586cf7a9d7c))
+
+
+
+
 ## [0.7.1](https://github.com/m13tLabs/ai-agent-for-gitlab/compare/v0.7.0...v0.7.1) (2026-09-29)
 
 ### Bug Fixes
