@@ -1,4 +1,47 @@
 
+## [0.8.0](https://github.com/m13tLabs/ai-agent-for-gitlab/compare/v0.7.0...v0.8.0) (2026-09-29)
+
+### Bug Fixes
+
+* **Gitlab:** Correcting artifacts collection ([006f2e2](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/006f2e2232ade9d95799394f473348303bf2a95d))
+
+* **Deployment:** Allow additional env vars, e.g. for proxy usage ([1857d74](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/1857d74a06d244ecd8e39383a18e8bc3cef66948))
+
+* **Gitlab:** Clone pipeline component via cron and push ([ae6ccb3](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/ae6ccb30a502e0b2cde4701b07a04a180af79534))
+
+* **Gitlab:** Correct escape inputs on Runner ([cc33891](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/cc33891b45a1b4b893868a3bac8a2161505b7126))
+
+* **Gitlab:** Use correct runner component path ([0194b6c](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/0194b6cf8607dfc2e309dc3a2639e743d58e1179))
+
+
+
+### Dependency Updates
+
+* **deps:** Update dependency hono to v4.13.11 ([a9e74be](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/a9e74be82e1268240f7868519589ae40e489c5ac))
+
+* **deps:** Update dependency @hono/node-server to v2.1.3 ([103aab0](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/103aab0bf5cb8fb94dfe00d3a3fad8cf47d6ad69))
+
+
+
+### Features
+
+* **Gitlab:** Split image + version into separate inputs ([c681b3d](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/c681b3ddc530ae715e077fa1e984c9a9afe0bad8))
+
+* **Gitlab:** Allow gitlab ci additions ([ccf930c](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/ccf930cb332fb9ea665be3fc700b690b3d515ed4))
+
+* **Gitlab:** Add option to run runner setup initially only ([387f1be](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/387f1be79b503b3e50c28e295045e38ca3db3cc4))
+
+* **Gitlab:** Adding sa token to runner project ([bc1118b](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/bc1118b6c4ce80dcaf84689c0b0f657ac68ed4e8))
+
+
+
+### Refactoring
+
+* Rewrite agent to typescript ([a9decea](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/a9decea9c7f18e6d403a78f00eab2586cf7a9d7c))
+
+
+
+
 ## [0.7.2](https://github.com/m13tLabs/ai-agent-for-gitlab/compare/v0.7.0...v0.7.2) (2026-09-29)
 
 ### Bug Fixes
