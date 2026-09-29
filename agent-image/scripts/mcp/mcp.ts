@@ -8,11 +8,13 @@ import {
   ErrorCode,
   McpError,
 } from "@modelcontextprotocol/sdk/types.js";
-import { request as httpsRequest } from "node:https";
+import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { z } from "zod";
+import { commentEndpoint, gitlabApi } from "../src/gitlab.ts";
+import type { Env } from "../src/types.ts";
 
 // Configuration interface
-interface GitLabConfig {
+export interface GitLabConfig {
   serverUrl: string;
   gitlabToken: string;
   projectId: string;
@@ -21,51 +23,19 @@ interface GitLabConfig {
   discussionId?: string; // if present for MR, reply in same discussion
 }
 
-// GitLab API helper function
-function gitlabApi(
-  config: GitLabConfig,
-  method: string,
-  path: string,
-  data: any = null
-): Promise<any> {
-  return new Promise((resolve, reject) => {
-    const url = new URL(`${config.serverUrl}/api/v4${path}`);
-    const options = {
-      method,
-      headers: {
-        "PRIVATE-TOKEN": config.gitlabToken,
-        "Content-Type": "application/json",
-      },
-    };
-
-    const req = httpsRequest(url, options, (res) => {
-      let body = "";
-      res.on("data", (chunk) => (body += chunk));
-      res.on("end", () => {
-        if (
-          typeof res.statusCode === "number" &&
-          res.statusCode >= 200 &&
-          res.statusCode < 300
-        ) {
-          try {
-            resolve(JSON.parse(body));
-          } catch {
-            resolve(body);
-          }
-        } else {
-          reject(
-            new Error(
-              `GitLab API error ${res.statusCode ?? "unknown"}: ${body}`
-            )
-          );
-        }
-      });
-    });
-
-    req.on("error", reject);
-    if (data) req.write(JSON.stringify(data));
-    req.end();
-  });
+// Fields the tools read from GitLab's issue / MR payloads.
+interface GitLabResource {
+  id: number;
+  title: string;
+  description: string | null;
+  state: string;
+  author: unknown;
+  created_at: string;
+  updated_at: string;
+  web_url: string;
+  source_branch?: string;
+  target_branch?: string;
+  merge_status?: string;
 }
 
 // Schema definitions
@@ -86,10 +56,7 @@ export class GitLabMCPServer {
       },
       {
         capabilities: {
-          tools: {
-            create_gitlab_comment: true,
-            get_current_gitlab_resource: true,
-          },
+          tools: {},
         },
       }
     );
@@ -157,13 +124,9 @@ export class GitLabMCPServer {
 
   private async createComment(args: z.infer<typeof CreateCommentSchema>) {
     try {
-      const endpoint = this.config.resourceType === "issue"
-        ? `/projects/${this.config.projectId}/issues/${this.config.resourceId}/notes`
-        : this.config.discussionId
-        ? `/projects/${this.config.projectId}/merge_requests/${this.config.resourceId}/discussions/${this.config.discussionId}/notes`
-        : `/projects/${this.config.projectId}/merge_requests/${this.config.resourceId}/notes`;
+      const endpoint = commentEndpoint(this.config);
 
-      const response = await gitlabApi(this.config, "POST", endpoint, {
+      const response = await gitlabApi<{ id: number }>(this.config, "POST", endpoint, {
         body: args.message,
       });
 
@@ -192,7 +155,7 @@ export class GitLabMCPServer {
           ? `/projects/${this.config.projectId}/issues/${this.config.resourceId}`
           : `/projects/${this.config.projectId}/merge_requests/${this.config.resourceId}`;
 
-      const response = await gitlabApi(this.config, "GET", endpoint);
+      const response = await gitlabApi<GitLabResource>(this.config, "GET", endpoint);
 
       return {
         content: [
@@ -230,28 +193,30 @@ export class GitLabMCPServer {
     }
   }
 
-  async run() {
-    const transport = new StdioServerTransport();
+  async connect(transport: Transport) {
     await this.server.connect(transport);
+  }
+
+  async run() {
+    await this.connect(new StdioServerTransport());
     console.error("GitLab MCP server running on stdio");
   }
 }
 
+export function configFromEnv(env: Env = process.env): GitLabConfig {
+  return {
+    serverUrl: env.CI_SERVER_URL || "https://gitlab.com",
+    gitlabToken: env.GITLAB_TOKEN || "",
+    projectId: env.CI_PROJECT_ID || "",
+    resourceId: env.AI_RESOURCE_ID || env.CI_ISSUE_IID || "",
+    resourceType: env.AI_RESOURCE_TYPE === "merge_request" ? "merge_request" : "issue",
+    discussionId: env.AI_DISCUSSION_ID || undefined,
+  };
+}
+
 // Main execution
 async function main() {
-  const config: GitLabConfig = {
-    serverUrl: process.env.CI_SERVER_URL || "https://gitlab.com",
-    gitlabToken: process.env.GITLAB_TOKEN || "",
-    projectId: process.env.CI_PROJECT_ID || "",
-    resourceId: process.env.AI_RESOURCE_ID || process.env.CI_ISSUE_IID || "",
-    resourceType: (process.env.AI_RESOURCE_TYPE === "merge_request"
-      ? "merge_request"
-      : "issue") as "merge_request" | "issue",
-    discussionId:
-      process.env.AI_DISCUSSION_ID && process.env.AI_DISCUSSION_ID !== ""
-        ? process.env.AI_DISCUSSION_ID
-        : undefined,
-  };
+  const config = configFromEnv();
 
   if (!config.gitlabToken || !config.projectId) {
     console.error(
@@ -265,7 +230,7 @@ async function main() {
 }
 
 // Only run main if this file is executed directly
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (import.meta.main) {
   main().catch((error) => {
     console.error("Fatal error:", error);
     process.exit(1);
