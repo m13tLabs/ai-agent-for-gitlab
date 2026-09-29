@@ -54,3 +54,9 @@ variables:
     CUSTOM_AGENT_PROMPT: $[[ inputs.custom-agent-prompt ]]
   script:
     - ai-runner
+  # Result of the run ($CI_PROJECT_DIR/ai-output.json), also when it failed.
+  artifacts:
+    when: always
+    paths:
+      - ai-output.json
+    expire_in: 1 week

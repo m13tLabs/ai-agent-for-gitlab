@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { errorComment, failedJobLink } from "../src/runner.ts";
-import { writeOutput } from "../src/output.ts";
+import { outputFile, writeOutput } from "../src/output.ts";
 import { tempDir } from "./helpers.ts";
 
 describe("failedJobLink", () => {
@@ -36,6 +36,16 @@ describe("errorComment", () => {
       errorComment("boom", { CI_JOB_URL: "https://gl/j/1" }),
       "❌ AI encountered an error:\n\n```\nboom\n```\n\nSee the [failed job](https://gl/j/1) for details.",
     );
+  });
+});
+
+describe("outputFile", () => {
+  it("lives in the job's project dir, where the CI templates collect it", () => {
+    assert.equal(outputFile({ CI_PROJECT_DIR: "/builds/g/p" }), "/builds/g/p/ai-output.json");
+  });
+
+  it("falls back to /opt/agent outside CI", () => {
+    assert.equal(outputFile({}), "/opt/agent/ai-output.json");
   });
 });
 
