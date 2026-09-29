@@ -186,11 +186,14 @@ gitlabSetup:
       inputs: {tags: [ai-agent]}            # optional component inputs
 ```
 
-- **Component project:** imported once from `cloneUrl`, with a description that links to the source (credentials in the URL are left out), and made a CI/CD Catalog resource. GitLab CE can't pull-mirror, so later changes to the source aren't picked up. Delete the project to re-import it, or pin `component.ref` to a tag the import contains.
+- **Component project:** created from `cloneUrl`, with a description that links to the source (credentials in the URL are left out), and made a CI/CD Catalog resource. How it stays current depends on the GitLab edition, which the setup Job detects from `/api/v4/metadata` and the license and logs as `GitLab edition`:
+  - **Premium or Ultimate:** the project is a pull mirror of `cloneUrl`. It doesn't start pipelines, and diverged branches follow the source. Every setup run starts a mirror update, on top of GitLab's own mirror schedule. An existing, imported project is converted to a mirror.
+  - **Free (CE, or EE without a license):** imported once. Later changes to the source aren't picked up; delete the project to re-import it, or pin `component.ref` to a tag the import contains.
+  - `component.mirror: false` forces the import-once behaviour everywhere.
 - **Runner project:** created with a `.gitlab-ci.yml` that includes `$CI_SERVER_FQDN/<component project>/agent-runner@<ref>` with your `inputs`, and a README describing the setup. The setup Job keeps `.gitlab-ci.yml` in sync (edits there are overwritten) and creates the README only once.
 - **Bot:** becomes Owner of both projects, so it can run pipelines on the runner project's protected default branch.
 - **Webhook:** `runner.project` is used as `agent.runnerProject` unless you set that yourself.
-- **Import timing:** the import runs in the background. The runner project is created on the next CronJob run after the import finished, within the `gitlabSetup.schedule` interval. A failed import fails the setup Job with GitLab's import error.
+- **Import timing:** the first import runs in the background. The runner project is created on the next CronJob run after it finished, within the `gitlabSetup.schedule` interval. A failed first import fails the setup Job with GitLab's import error. A failed later mirror update is only a warning; the last synced state stays in use.
 - **Still manual:** step 2, the CI/CD variables.
 
 Notes:

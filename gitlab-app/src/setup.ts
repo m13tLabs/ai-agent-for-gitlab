@@ -18,10 +18,11 @@
 //   6. webhook Deployment restarted when the chart's gitlab.*/secrets.* values
 //      or the webhook secret in use changed (CONFIG_CHECKSUM + WEBHOOK_SECRET
 //      vs. the annotation the pods last ran with)
-//   7. optional (CENTRAL_PIPELINE_ENABLED, runner mode): the component project,
-//      imported once from COMPONENT_CLONE_URL and made a CI/CD Catalog
-//      resource, and the runner project whose .gitlab-ci.yml includes its
-//      agent-runner component; the bot is Owner of both
+//   7. optional (CENTRAL_PIPELINE_ENABLED, runner mode): the component project
+//      from COMPONENT_CLONE_URL (a pull mirror, synced every run, on Premium/
+//      Ultimate; otherwise imported once), made a CI/CD Catalog resource, and
+//      the runner project whose .gitlab-ci.yml includes its agent-runner
+//      component; the bot is Owner of both
 //
 // SETUP_GROUPS / SETUP_PROJECTS are JSON arrays of glob patterns (`*`, `?`,
 // matched case-insensitively against the full path; `*` also matches `/`) or
@@ -73,6 +74,8 @@ export interface SetupConfig {
     enabled: boolean;
     componentProject: string;
     cloneUrl: string;
+    // Pull-mirror cloneUrl where the edition allows it (Premium/Ultimate).
+    mirror: boolean;
     ref: string;
     runnerProject: string;
     inputs: Json;
@@ -180,6 +183,7 @@ export async function loadConfig(env = process.env): Promise<SetupConfig> {
       enabled: centralPipeline,
       componentProject: centralPipeline ? requireEnv("COMPONENT_PROJECT") : "",
       cloneUrl: centralPipeline ? requireEnv("COMPONENT_CLONE_URL") : "",
+      mirror: env.COMPONENT_MIRROR !== "false",
       ref: env.COMPONENT_REF || "",
       runnerProject: centralPipeline ? requireEnv("RUNNER_PROJECT") : "",
       inputs,
@@ -681,40 +685,100 @@ async function createProject(gl: ReturnType<typeof gitlab>, path: string, attrib
   return project;
 }
 
-// Component project, imported once from cloneUrl (GitLab CE has no pull
-// mirroring, so later changes need a new import). Returns it once the import
-// is done, null while it's still running.
+export interface Edition {
+  version: string;
+  enterprise: boolean;
+  // License plan (premium, ultimate, ...); "" on CE or without a license.
+  plan: string;
+}
+
+// EE with a valid Premium/Ultimate license; pull mirroring needs that.
+export function canPullMirror(edition: Edition): boolean {
+  return edition.enterprise && ["premium", "ultimate"].includes(edition.plan);
+}
+
+async function detectEdition(gl: ReturnType<typeof gitlab>): Promise<Edition> {
+  const optional = async (path: string): Promise<Json | null> => {
+    try {
+      return await gl.request("GET", path);
+    } catch (e) {
+      if (e instanceof GitLabError && (e.status === 404 || e.status === 403)) return null;
+      throw e;
+    }
+  };
+  // /metadata (GitLab 15.2+) says CE or EE; /license only exists on EE.
+  const metadata = await optional("/metadata");
+  const enterprise = metadata?.enterprise === true;
+  const license = enterprise ? await optional("/license") : null;
+  const plan = license && !license.expired ? String(license.plan ?? "").toLowerCase() : "";
+  const edition = { version: metadata?.version ?? "unknown", enterprise, plan };
+  logger.info("GitLab edition", { ...edition, pullMirroring: canPullMirror(edition) });
+  return edition;
+}
+
+// Component project from cloneUrl: a pull mirror kept in sync when the
+// instance supports it (Premium/Ultimate), otherwise imported once (GitLab
+// Free can't mirror; delete the project to re-import). Returns it once its
+// first import is done, null while that's still running.
 async function ensureComponentProject(cfg: SetupConfig, gl: ReturnType<typeof gitlab>, botId: number): Promise<Json | null> {
   const cp = cfg.centralPipeline;
-  const description =
-    `CI/CD component "${COMPONENT_NAME}" of the AI agent for GitLab, imported from ${sourceLink(cp.cloneUrl)}. ${MANAGED_NOTE}.`;
+  const mirror = cp.mirror && canPullMirror(await detectEdition(gl));
+  if (cp.mirror && !mirror) logger.info("Pull mirroring needs GitLab Premium or Ultimate; importing the component project once instead");
 
-  let project = await findProject(gl, cp.componentProject);
-  if (!project) {
+  const description =
+    `CI/CD component "${COMPONENT_NAME}" of the AI agent for GitLab, ${mirror ? "mirrored" : "imported"} from ${sourceLink(cp.cloneUrl)}. ${MANAGED_NOTE}.`;
+  // Mirror updates don't start pipelines; diverged branches follow the source.
+  const mirrorAttributes = { mirror: true, import_url: cp.cloneUrl, mirror_trigger_builds: false, mirror_overwrites_diverged_branches: true };
+
+  const existing = await findProject(gl, cp.componentProject);
+  let project: Json;
+  if (!existing) {
     project = await createProject(gl, cp.componentProject, {
       import_url: cp.cloneUrl,
       description,
       visibility: cp.visibility,
+      ...(mirror ? mirrorAttributes : {}),
     });
-  } else if (project.description !== description) {
-    await gl.request("PUT", `/projects/${project.id}`, { description });
-    logger.info("Updated component project description", { project: cp.componentProject });
+  } else {
+    project = existing;
+    // GitLab returns import_url without credentials, hence the comparison by link.
+    const mirrorOutdated =
+      mirror && (project.mirror !== true || sourceLink(project.import_url ?? "") !== sourceLink(cp.cloneUrl));
+    const update = {
+      ...(project.description !== description ? { description } : {}),
+      ...(mirrorOutdated ? mirrorAttributes : {}),
+    };
+    if (Object.keys(update).length) {
+      await gl.request("PUT", `/projects/${project.id}`, update);
+      logger.info("Updated component project", { project: cp.componentProject, fields: Object.keys(update) });
+    }
   }
   await ensureMember(gl, "projects", project.id, cp.componentProject, botId, OWNER);
 
   const { import_status: status, import_error: error } = await gl.request("GET", `/projects/${project.id}/import`);
-  if (status === "failed") {
-    throw new Error(`Import of ${cp.componentProject} from ${sourceLink(cp.cloneUrl)} failed: ${error}`);
-  }
-  // "none": created some other way (e.g. pushed), usable as is.
-  if (status !== "finished" && status !== "none") {
+  // Re-read: default_branch is only known once the repository is imported.
+  project = await gl.request("GET", `/projects/${project.id}`);
+  if (!project.default_branch) {
+    if (status === "failed") {
+      throw new Error(`Import of ${cp.componentProject} from ${sourceLink(cp.cloneUrl)} failed: ${error}`);
+    }
     logger.info("Component project import still running, finishing on the next run", { project: cp.componentProject, status });
     return null;
   }
+  // A later mirror update failed: the last synced state is still usable.
+  if (status === "failed") logger.warn("Last mirror update of the component project failed", { project: cp.componentProject, error });
 
   await ensureCatalogResource(gl, cp.componentProject);
-  // Re-read: default_branch is only known once the repository is imported.
-  return gl.request("GET", `/projects/${project.id}`);
+  if (mirror) {
+    try {
+      await gl.request("POST", `/projects/${project.id}/mirror/pull`);
+      logger.info("Started mirror update of the component project", { project: cp.componentProject });
+    } catch (e) {
+      // e.g. an update already running; GitLab also syncs mirrors on its own schedule.
+      logger.warn("Could not start the mirror update", { project: cp.componentProject, error: e instanceof Error ? e.message : e });
+    }
+  }
+  return project;
 }
 
 // Marks the project as a CI/CD Catalog resource (Settings > General > "CI/CD

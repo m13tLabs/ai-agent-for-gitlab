@@ -239,6 +239,8 @@ containers:
         value: {{ required "gitlabSetup.centralPipeline.component.project is required" .component.project | quote }}
       - name: COMPONENT_CLONE_URL
         value: {{ required "gitlabSetup.centralPipeline.component.cloneUrl is required" .component.cloneUrl | quote }}
+      - name: COMPONENT_MIRROR
+        value: {{ .component.mirror | toString | quote }}
       - name: COMPONENT_REF
         value: {{ .component.ref | quote }}
       - name: RUNNER_PROJECT

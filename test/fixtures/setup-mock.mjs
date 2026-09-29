@@ -16,6 +16,8 @@
 //            MOCK_NO_COMPONENT is set, then POST /projects creates it (31)
 //            with its import still running; runner project ai/agent-runner is
 //            missing and created as 32
+//   edition  CE, or EE with MOCK_EDITION=premium (Premium license) /
+//            MOCK_EDITION=ee (no license)
 import { createHash } from "node:crypto";
 import http from "node:http";
 
@@ -38,8 +40,16 @@ const projectHooks = { 10: [{ id: 99, name: "ai-agent-for-gitlab", url: "http://
 const centralGroups = [{ id: 20, full_path: "ai" }];
 const centralProjects = process.env.MOCK_NO_COMPONENT
   ? []
-  : [{ id: 30, path_with_namespace: "ai/ai-agent-for-gitlab", description: "old", default_branch: "develop" }];
+  : [{
+      id: 30,
+      path_with_namespace: "ai/ai-agent-for-gitlab",
+      description: "old",
+      default_branch: "develop",
+      mirror: false,
+      import_url: "https://github.com/m13tLabs/ai-agent-for-gitlab.git",
+    }];
 const imports = { 30: "finished", 31: "scheduled" };
+const edition = process.env.MOCK_EDITION || "ce";
 
 const writes = [];
 
@@ -53,7 +63,13 @@ function route(method, url, body) {
   }
   if (method === "POST" && path === "/api/v4/projects") {
     const { name } = JSON.parse(body);
-    return [201, name === "agent-runner" ? { id: 32, default_branch: null } : { id: 31 }];
+    const project = { id: name === "agent-runner" ? 32 : 31, path_with_namespace: `ai/${name}`, default_branch: null };
+    centralProjects.push(project);
+    return [201, project];
+  }
+  if (path === "/api/v4/metadata") return [200, { version: "19.4.0", enterprise: edition !== "ce" }];
+  if (path === "/api/v4/license") {
+    return edition === "premium" ? [200, { plan: "premium", expired: false }] : [404, { message: "404 Not Found" }];
   }
   if ((m = path.match(/^\/api\/v4\/groups\/([^/]+)$/))) {
     const g = centralGroups.find((g) => g.full_path === decodeURIComponent(m[1]));

@@ -138,10 +138,14 @@ gitlabSetup:
     component:
       # -- Full path of the component project; its group must exist
       project: ai/ai-agent-for-gitlab
-      # -- Git URL the component project is imported from, once (GitLab CE
-      # can't pull-mirror; delete the project to re-import). A private source
+      # -- Git URL the component project is created from. A private source
       # needs credentials in the URL, which are left out of the description.
       cloneUrl: https://github.com/m13tLabs/ai-agent-for-gitlab.git
+      # -- Keep the component project in sync with `cloneUrl` as a pull mirror
+      # (started on every setup run) when the instance supports it: detected
+      # from the edition and license, needs GitLab Premium or Ultimate. On
+      # Free the project is imported once; delete it to re-import.
+      mirror: true
       # -- Ref of the component the runner project includes (branch, tag or
       # SHA); empty = the component project's default branch
       ref: ""

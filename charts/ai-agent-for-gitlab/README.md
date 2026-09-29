@@ -37,7 +37,8 @@ GitLab webhook middleware that triggers AI agent pipelines on @ai mentions and w
 | gitlabSetup.accountType | string | `"service_account"` | "service_account" (instance service account) or "user" (regular user, for GitLab versions without the service account API) |
 | gitlabSetup.avatar | bool | `true` | Upload the bundled bot avatar (files/bot-avatar.png) as the bot's avatar |
 | gitlabSetup.botName | string | `"AI Agent"` | Display name of the bot account |
-| gitlabSetup.centralPipeline.component.cloneUrl | string | `"https://github.com/m13tLabs/ai-agent-for-gitlab.git"` | Git URL the component project is imported from, once (GitLab CE can't pull-mirror; delete the project to re-import). A private source needs credentials in the URL, which are left out of the description. |
+| gitlabSetup.centralPipeline.component.cloneUrl | string | `"https://github.com/m13tLabs/ai-agent-for-gitlab.git"` | Git URL the component project is created from. A private source needs credentials in the URL, which are left out of the description. |
+| gitlabSetup.centralPipeline.component.mirror | bool | `true` | Keep the component project in sync with `cloneUrl` as a pull mirror (started on every setup run) when the instance supports it: detected from the edition and license, needs GitLab Premium or Ultimate. On Free the project is imported once; delete it to re-import. |
 | gitlabSetup.centralPipeline.component.project | string | `"ai/ai-agent-for-gitlab"` | Full path of the component project; its group must exist |
 | gitlabSetup.centralPipeline.component.ref | string | `""` | Ref of the component the runner project includes (branch, tag or SHA); empty = the component project's default branch |
 | gitlabSetup.centralPipeline.enabled | bool | `false` | Create and maintain the component and runner projects |

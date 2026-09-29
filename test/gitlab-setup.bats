@@ -171,3 +171,37 @@ central_run() {
   run setup_run -e CENTRAL_PIPELINE_ENABLED=true -e COMPONENT_PROJECT=ai/x
   assert_output_contains "FAILED: Missing COMPONENT_CLONE_URL"
 }
+
+@test "central pipeline on Premium: existing component project becomes a pull mirror, synced every run" {
+  run central_run -e MOCK_EDITION=premium
+  [ "$status" -eq 0 ]
+  assert_output_contains "OK"
+  assert_output_contains 'PUT /api/v4/projects/30 {"description":"CI/CD component \"agent-runner\" of the AI agent for GitLab, mirrored from https://github.com/m13tLabs/ai-agent-for-gitlab.'
+  assert_output_contains '"mirror":true,"import_url":"https://user:secret@github.com/m13tLabs/ai-agent-for-gitlab.git","mirror_trigger_builds":false,"mirror_overwrites_diverged_branches":true'
+  assert_output_contains "POST /api/v4/projects/30/mirror/pull"
+  # Runner project setup continues although the triggered update now runs.
+  assert_output_contains "POST /api/v4/projects/32/repository/commits"
+}
+
+@test "central pipeline on Premium: new component project is created as a pull mirror" {
+  run central_run -e MOCK_EDITION=premium -e MOCK_NO_COMPONENT=1
+  [ "$status" -eq 0 ]
+  assert_output_contains "OK"
+  assert_output_contains 'POST /api/v4/projects {"name":"ai-agent-for-gitlab"'
+  assert_output_contains '"mirror":true,"mirror_trigger_builds":false'
+  # First import still running: no sync trigger, no runner project yet.
+  assert_output_lacks "mirror/pull"
+  assert_output_lacks "agent-runner\",\"path\""
+}
+
+@test "central pipeline without Premium (EE unlicensed, CE) or with mirror off: import only" {
+  for args in "-e MOCK_EDITION=ee" "-e MOCK_EDITION=ce" "-e MOCK_EDITION=premium -e COMPONENT_MIRROR=false"; do
+    # shellcheck disable=SC2086
+    run central_run $args
+    [ "$status" -eq 0 ]
+    assert_output_contains "OK"
+    assert_output_contains "imported from https://github.com/m13tLabs/ai-agent-for-gitlab."
+    assert_output_lacks '"mirror":true'
+    assert_output_lacks "mirror/pull"
+  done
+}
