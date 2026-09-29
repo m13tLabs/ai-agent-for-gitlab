@@ -180,20 +180,21 @@ gitlabSetup:
     component:
       project: ai/ai-agent-for-gitlab       # group "ai" must exist
       cloneUrl: https://github.com/m13tLabs/ai-agent-for-gitlab.git
-      ref: ""                               # "" = the imported default branch; or a tag, e.g. v0.5.0
+      ref: ""                               # "" = the source's default branch; or a tag, e.g. v0.5.0
     runner:
       project: ai/agent-runner
       inputs: {tags: [ai-agent]}            # optional component inputs
+additionalEnvs:                             # only if the setup Job needs a proxy to reach cloneUrl
+  - HTTPS_PROXY: "http://proxy.corp:3128"
+  - NO_PROXY: ".svc,gitlab.corp"
 ```
 
-- **Component project:** created from `cloneUrl`, with a description that links to the source (credentials in the URL are left out), and made a CI/CD Catalog resource. How it stays current depends on the GitLab edition, which the setup Job detects from `/api/v4/metadata` and the license and logs as `GitLab edition`:
-  - **Premium or Ultimate:** the project is a pull mirror of `cloneUrl`. It doesn't start pipelines, and diverged branches follow the source. Every setup run starts a mirror update, on top of GitLab's own mirror schedule. An existing, imported project is converted to a mirror.
-  - **Free (CE, or EE without a license):** imported once. Later changes to the source aren't picked up; delete the project to re-import it, or pin `component.ref` to a tag the import contains.
-  - `component.mirror: false` forces the import-once behaviour everywhere.
+- **Component project:** created empty, with a description that links to the source (credentials in the URL are left out), and made a CI/CD Catalog resource. On every run, the setup Job clones `cloneUrl` itself and pushes its branches and tags into the project, then sets the project's default branch to the source's. So only the Job needs access to the source; GitLab doesn't. The push is fast-forward only: a branch rewritten at the source, or changed directly in the component project, fails the setup Job instead of losing commits.
+- **Pull mirror** (Premium or Ultimate): the setup Job detects the edition from `/api/v4/metadata` and the license, and logs it as `GitLab edition`. On Premium or Ultimate it also turns the project into a pull mirror of `cloneUrl` and starts a mirror update every run, so GitLab syncs between runs too. The mirror doesn't start pipelines, and diverged branches follow the source. It needs GitLab itself to reach `cloneUrl`; if it can't, the Job only logs a warning and its own sync carries on. `component.mirror: false` turns the mirror off.
 - **Runner project:** created with a `.gitlab-ci.yml` that includes `$CI_SERVER_FQDN/<component project>/agent-runner@<ref>` with your `inputs`, and a README describing the setup. The setup Job keeps `.gitlab-ci.yml` in sync (edits there are overwritten) and creates the README only once.
 - **Bot:** becomes Owner of both projects, so it can run pipelines on the runner project's protected default branch.
 - **Webhook:** `runner.project` is used as `agent.runnerProject` unless you set that yourself.
-- **Import timing:** the first import runs in the background. The runner project is created on the next CronJob run after it finished, within the `gitlabSetup.schedule` interval. A failed first import fails the setup Job with GitLab's import error. A failed later mirror update is only a warning; the last synced state stays in use.
+- **Timing:** the Job pushes the source before it sets up the runner project, so both are done in the same run. A source the Job can't clone fails the setup Job with git's error and a hint about `additionalEnvs`.
 - **Still manual:** step 2, the CI/CD variables.
 
 Notes:

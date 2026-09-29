@@ -41,6 +41,11 @@ ENV NODE_ENV=production
 
 WORKDIR /app
 
+# git for the gitlabSetup Job's central pipeline step, which clones the
+# component source and pushes it into GitLab. Versions follow the Alpine release.
+# hadolint ignore=DL3018
+RUN apk add --no-cache git
+
 # Install production dependencies only
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund \

@@ -18,18 +18,22 @@
 //   6. webhook Deployment restarted when the chart's gitlab.*/secrets.* values
 //      or the webhook secret in use changed (CONFIG_CHECKSUM + WEBHOOK_SECRET
 //      vs. the annotation the pods last ran with)
-//   7. optional (CENTRAL_PIPELINE_ENABLED, runner mode): the component project
-//      from COMPONENT_CLONE_URL (a pull mirror, synced every run, on Premium/
-//      Ultimate; otherwise imported once), made a CI/CD Catalog resource, and
-//      the runner project whose .gitlab-ci.yml includes its agent-runner
-//      component; the bot is Owner of both
+//   7. optional (CENTRAL_PIPELINE_ENABLED, runner mode): the component project,
+//      synced from COMPONENT_CLONE_URL every run by this Job (git clone + push)
+//      and on Premium/Ultimate also pull-mirrored by GitLab, made a CI/CD
+//      Catalog resource, and the runner project whose .gitlab-ci.yml includes
+//      its agent-runner component; the bot is Owner of both
 //
 // SETUP_GROUPS / SETUP_PROJECTS are JSON arrays of glob patterns (`*`, `?`,
 // matched case-insensitively against the full path; `*` also matches `/`) or
 // {path, accessLevel, mergeRequestsEvents} objects; the first match wins.
 
+import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { promisify } from "node:util";
 import { logger } from "./logger.ts";
 
 const HOOK_NAME = "ai-agent-for-gitlab";
@@ -74,7 +78,7 @@ export interface SetupConfig {
     enabled: boolean;
     componentProject: string;
     cloneUrl: string;
-    // Pull-mirror cloneUrl where the edition allows it (Premium/Ultimate).
+    // Also let GitLab pull-mirror cloneUrl where the edition allows it (Premium/Ultimate).
     mirror: boolean;
     ref: string;
     runnerProject: string;
@@ -685,6 +689,77 @@ async function createProject(gl: ReturnType<typeof gitlab>, path: string, attrib
   return project;
 }
 
+const execFileAsync = promisify(execFile);
+
+// Masks credentials in URLs (https://user:token@host) within git's output.
+export function redactUrls(text: string): string {
+  return text.replace(/(\w+:\/\/)[^/@\s]+@/g, "$1***@");
+}
+
+async function git(args: string[], env: Record<string, string> = {}): Promise<string> {
+  try {
+    const { stdout } = await execFileAsync("git", args, {
+      env: { ...process.env, GIT_TERMINAL_PROMPT: "0", ...env },
+      maxBuffer: 16 * 1024 * 1024,
+    });
+    return stdout.trim();
+  } catch (e) {
+    const { stderr, message } = e as { stderr?: string; message?: string };
+    throw new Error(redactUrls((stderr || message || String(e)).trim()));
+  }
+}
+
+// Authenticates git against GitLab through the environment (never argv): an
+// Authorization header scoped to the GitLab origin, so the clone of the source
+// never sees the token.
+export function gitAuthEnv(repoUrl: string, token: string): Record<string, string> {
+  const url = new URL(repoUrl);
+  if (url.protocol !== "https:" && url.protocol !== "http:") return {};
+  return {
+    GIT_CONFIG_COUNT: "1",
+    GIT_CONFIG_KEY_0: `http.${url.origin}/.extraHeader`,
+    GIT_CONFIG_VALUE_0: `Authorization: Basic ${Buffer.from(`oauth2:${token}`).toString("base64")}`,
+  };
+}
+
+// Clones cloneUrl (from this Job, so its network and proxy settings apply, not
+// GitLab's) and pushes all branches and tags into the component project.
+// Fast-forward only: a branch rewritten at the source or changed in GitLab
+// fails the push instead of losing commits. Returns the source's default branch.
+async function syncComponentProject(cfg: SetupConfig, project: Json): Promise<string> {
+  const cp = cfg.centralPipeline;
+  const dir = await mkdtemp(join(tmpdir(), "component-"));
+  try {
+    try {
+      await git(["clone", "--bare", "--quiet", cp.cloneUrl, dir]);
+    } catch (e) {
+      throw new Error(
+        `Could not clone ${sourceLink(cp.cloneUrl)}: ${e instanceof Error ? e.message : e}. ` +
+          "This Job clones it: give it network access, e.g. a proxy through additionalEnvs (HTTPS_PROXY), " +
+          "or set gitlabSetup.centralPipeline.component.cloneUrl to a reachable mirror."
+      );
+    }
+    const head = await git(["--git-dir", dir, "symbolic-ref", "--short", "HEAD"]);
+    const target: string = project.http_url_to_repo;
+    let result: string;
+    try {
+      result = await git(
+        ["--git-dir", dir, "push", "--porcelain", target, "refs/heads/*:refs/heads/*", "refs/tags/*:refs/tags/*"],
+        gitAuthEnv(target, cfg.adminToken)
+      );
+    } catch (e) {
+      throw new Error(`Could not push to ${cp.componentProject}: ${e instanceof Error ? e.message : e}`);
+    }
+    // --porcelain: one "<flag>\t<from>:<to>\t<summary>" line per ref, "=" = up to date.
+    const updated = result.split("\n").filter((l) => /^[*+ -]\t/.test(l)).map((l) => l.split("\t")[1].split(":")[1]);
+    if (updated.length) logger.info("Synced component project from source", { project: cp.componentProject, refs: updated });
+    else logger.debug("Component project already in sync", { project: cp.componentProject });
+    return head;
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
 export interface Edition {
   version: string;
   enterprise: boolean;
@@ -716,82 +791,59 @@ async function detectEdition(gl: ReturnType<typeof gitlab>): Promise<Edition> {
   return edition;
 }
 
-// Component project from cloneUrl: a pull mirror kept in sync when the
-// instance supports it (Premium/Ultimate), otherwise imported once (GitLab
-// Free can't mirror; delete the project to re-import). Returns it once its
-// first import is done, null while that's still running.
-async function ensureComponentProject(cfg: SetupConfig, gl: ReturnType<typeof gitlab>, botId: number): Promise<Json | null> {
+// Pull mirror on top of the Job's own sync, so GitLab also syncs between runs.
+// GitLab itself must reach cloneUrl for that; where it can't (no outbound
+// access), this only warns and the Job's push keeps the project current.
+async function ensurePullMirror(cfg: SetupConfig, gl: ReturnType<typeof gitlab>, project: Json) {
   const cp = cfg.centralPipeline;
-  const mirror = cp.mirror && canPullMirror(await detectEdition(gl));
-  if (cp.mirror && !mirror) logger.info("Pull mirroring needs GitLab Premium or Ultimate; importing the component project once instead");
-
-  const description =
-    `CI/CD component "${COMPONENT_NAME}" of the AI agent for GitLab, ${mirror ? "mirrored" : "imported"} from ${sourceLink(cp.cloneUrl)}. ${MANAGED_NOTE}.`;
-  // Mirror updates don't start pipelines; diverged branches follow the source.
-  const mirrorAttributes = { mirror: true, import_url: cp.cloneUrl, mirror_trigger_builds: false, mirror_overwrites_diverged_branches: true };
-
-  const existing = await findProject(gl, cp.componentProject);
-  let project: Json;
-  if (!existing) {
-    try {
-      project = await createProject(gl, cp.componentProject, {
-        import_url: cp.cloneUrl,
-        description,
-        visibility: cp.visibility,
-        ...(mirror ? mirrorAttributes : {}),
-      });
-    } catch (e) {
-      // GitLab checks the URL with `git ls-remote` from its own servers first.
-      if (e instanceof GitLabError && e.status === 422 && /unable to access repository/i.test(e.message)) {
-        throw new Error(
-          `GitLab can't reach ${sourceLink(cp.cloneUrl)} to import ${cp.componentProject} (${e.message}). ` +
-            "The GitLab server itself clones it, not this Job: give GitLab outbound access (or its proxy settings), " +
-            "or set gitlabSetup.centralPipeline.component.cloneUrl to a mirror GitLab can reach; " +
-            "a private source needs credentials in the URL."
-        );
-      }
-      throw e;
-    }
-  } else {
-    project = existing;
+  try {
     // GitLab returns import_url without credentials, hence the comparison by link.
-    const mirrorOutdated =
-      mirror && (project.mirror !== true || sourceLink(project.import_url ?? "") !== sourceLink(cp.cloneUrl));
-    const update = {
-      ...(project.description !== description ? { description } : {}),
-      ...(mirrorOutdated ? mirrorAttributes : {}),
-    };
-    if (Object.keys(update).length) {
-      await gl.request("PUT", `/projects/${project.id}`, update);
-      logger.info("Updated component project", { project: cp.componentProject, fields: Object.keys(update) });
+    if (project.mirror !== true || sourceLink(project.import_url ?? "") !== sourceLink(cp.cloneUrl)) {
+      // Mirror updates don't start pipelines; diverged branches follow the source.
+      await gl.request("PUT", `/projects/${project.id}`, {
+        mirror: true,
+        import_url: cp.cloneUrl,
+        mirror_trigger_builds: false,
+        mirror_overwrites_diverged_branches: true,
+      });
+      logger.info("Enabled pull mirroring of the component project", { project: cp.componentProject });
     }
+    await gl.request("POST", `/projects/${project.id}/mirror/pull`);
+  } catch (e) {
+    logger.warn("Pull mirroring of the component project unavailable, relying on the setup Job's sync", {
+      project: cp.componentProject,
+      error: redactUrls(e instanceof Error ? e.message : String(e)),
+    });
+  }
+}
+
+// Component project, kept in sync with cloneUrl on every run by the Job
+// itself (clone + push), so GitLab never needs to reach the source and it
+// works on every edition. On Premium/Ultimate GitLab also pull-mirrors it.
+async function ensureComponentProject(cfg: SetupConfig, gl: ReturnType<typeof gitlab>, botId: number): Promise<Json> {
+  const cp = cfg.centralPipeline;
+  const description =
+    `CI/CD component "${COMPONENT_NAME}" of the AI agent for GitLab, synced from ${sourceLink(cp.cloneUrl)}. ${MANAGED_NOTE}.`;
+
+  const project =
+    (await findProject(gl, cp.componentProject)) ??
+    (await createProject(gl, cp.componentProject, { description, visibility: cp.visibility }));
+  if (project.description !== description) {
+    await gl.request("PUT", `/projects/${project.id}`, { description });
+    logger.info("Updated component project description", { project: cp.componentProject });
   }
   await ensureMember(gl, "projects", project.id, cp.componentProject, botId, OWNER);
 
-  const { import_status: status, import_error: error } = await gl.request("GET", `/projects/${project.id}/import`);
-  // Re-read: default_branch is only known once the repository is imported.
-  project = await gl.request("GET", `/projects/${project.id}`);
-  if (!project.default_branch) {
-    if (status === "failed") {
-      throw new Error(`Import of ${cp.componentProject} from ${sourceLink(cp.cloneUrl)} failed: ${error}`);
-    }
-    logger.info("Component project import still running, finishing on the next run", { project: cp.componentProject, status });
-    return null;
+  const head = await syncComponentProject(cfg, project);
+  // A new project gets whichever branch GitLab saw first; follow the source.
+  if (project.default_branch !== head) {
+    await gl.request("PUT", `/projects/${project.id}`, { default_branch: head });
+    logger.info("Set component project default branch", { project: cp.componentProject, branch: head });
   }
-  // A later mirror update failed: the last synced state is still usable.
-  if (status === "failed") logger.warn("Last mirror update of the component project failed", { project: cp.componentProject, error });
 
   await ensureCatalogResource(gl, cp.componentProject);
-  if (mirror) {
-    try {
-      await gl.request("POST", `/projects/${project.id}/mirror/pull`);
-      logger.info("Started mirror update of the component project", { project: cp.componentProject });
-    } catch (e) {
-      // e.g. an update already running; GitLab also syncs mirrors on its own schedule.
-      logger.warn("Could not start the mirror update", { project: cp.componentProject, error: e instanceof Error ? e.message : e });
-    }
-  }
-  return project;
+  if (cp.mirror && canPullMirror(await detectEdition(gl))) await ensurePullMirror(cfg, gl, project);
+  return gl.request("GET", `/projects/${project.id}`);
 }
 
 // Marks the project as a CI/CD Catalog resource (Settings > General > "CI/CD
@@ -866,7 +918,6 @@ async function ensureRunnerProject(cfg: SetupConfig, gl: ReturnType<typeof gitla
 
 async function ensureCentralPipeline(cfg: SetupConfig, gl: ReturnType<typeof gitlab>, botId: number) {
   const component = await ensureComponentProject(cfg, gl, botId);
-  if (!component) return;
   await ensureRunnerProject(cfg, gl, botId, component);
   logger.info("Central pipeline in sync", {
     component: cfg.centralPipeline.componentProject,

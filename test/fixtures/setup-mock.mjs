@@ -11,15 +11,29 @@
 //   deployment web: its pods last ran with CONFIG_CHECKSUM "chart-sum" and
 //            WEBHOOK_SECRET "hook-secret"
 //   central pipeline (only looked up by path, not listed): group ai (20);
-//            component project ai/ai-agent-for-gitlab (30, imported, default
-//            branch develop, not yet a catalog resource) unless
-//            MOCK_NO_COMPONENT is set, then POST /projects creates it (31)
-//            with its import still running; runner project ai/agent-runner is
-//            missing and created as 32
+//            component project ai/ai-agent-for-gitlab (30, default branch
+//            main, not a mirror, not yet a catalog resource) unless
+//            MOCK_NO_COMPONENT is set, then POST /projects creates it (31);
+//            runner project ai/agent-runner is missing and created as 32.
+//            Git: source repo file:///tmp/source.git (branches develop = HEAD
+//            and feature, tag v0.5.0); the component project's repository is
+//            the bare file:///tmp/target.git, printed as "REFS ..." at the end.
+//            MOCK_MIRROR_FAILS: enabling the pull mirror fails like on a
+//            GitLab without outbound access.
 //   edition  CE, or EE with MOCK_EDITION=premium (Premium license) /
 //            MOCK_EDITION=ee (no license)
+import { execSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import http from "node:http";
+
+const TARGET = "file:///tmp/target.git";
+if (process.env.CENTRAL_PIPELINE_ENABLED) {
+  const sh = (cmd) => execSync(cmd, { stdio: "ignore", env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" } });
+  sh("rm -rf /tmp/src /tmp/source.git /tmp/target.git && git init -q -b develop /tmp/src");
+  sh("mkdir -p /tmp/src/templates && echo 'spec: {}' > /tmp/src/templates/agent-runner.yml");
+  sh("cd /tmp/src && git add -A && git commit -qm init && git tag v0.5.0 && git branch feature");
+  sh("git clone -q --bare /tmp/src /tmp/source.git && git init -q --bare /tmp/target.git");
+}
 
 const BOT_ID = 7;
 const groups = [
@@ -44,11 +58,10 @@ const centralProjects = process.env.MOCK_NO_COMPONENT
       id: 30,
       path_with_namespace: "ai/ai-agent-for-gitlab",
       description: "old",
-      default_branch: "develop",
+      default_branch: "main",
       mirror: false,
-      import_url: "https://github.com/m13tLabs/ai-agent-for-gitlab.git",
+      http_url_to_repo: TARGET,
     }];
-const imports = { 30: "finished", 31: "scheduled" };
 const edition = process.env.MOCK_EDITION || "ce";
 
 const writes = [];
@@ -62,11 +75,8 @@ function route(method, url, body) {
       : [200, { data: { catalogResourcesCreate: { errors: [] } } }];
   }
   if (method === "POST" && path === "/api/v4/projects") {
-    const { name, import_url: importUrl } = JSON.parse(body);
-    if (importUrl?.includes("unreachable")) {
-      return [422, { message: "Unable to access repository with the URL and credentials provided" }];
-    }
-    const project = { id: name === "agent-runner" ? 32 : 31, path_with_namespace: `ai/${name}`, default_branch: null };
+    const { name, description } = JSON.parse(body);
+    const project = { id: name === "agent-runner" ? 32 : 31, path_with_namespace: `ai/${name}`, description, default_branch: null, http_url_to_repo: TARGET };
     centralProjects.push(project);
     return [201, project];
   }
@@ -78,12 +88,16 @@ function route(method, url, body) {
     const g = centralGroups.find((g) => g.full_path === decodeURIComponent(m[1]));
     if (g) return [200, g];
   }
+  if (method === "PUT" && process.env.MOCK_MIRROR_FAILS && JSON.parse(body).mirror) {
+    return [422, { message: "Unable to access repository with the URL and credentials provided" }];
+  }
   if ((m = path.match(/^\/api\/v4\/projects\/([^/]+)$/))) {
     const key = decodeURIComponent(m[1]);
     const p = centralProjects.find((p) => p.path_with_namespace === key || String(p.id) === key);
+    // Updates stick, so a re-read sees e.g. the new default branch.
+    if (p && method === "PUT") Object.assign(p, JSON.parse(body));
     if (p) return [200, p];
   }
-  if ((m = path.match(/^\/api\/v4\/projects\/(\d+)\/import$/))) return [200, { import_status: imports[m[1]] ?? "none" }];
   if (path === "/api/v4/user") return [200, { username: "root", is_admin: true }];
   if (path === "/api/v4/users") return [200, [{ id: BOT_ID, username: "review-agent", name: "AI Agent", email: "" }]];
   if (path === "/api/v4/groups") return [200, groups];
@@ -153,4 +167,7 @@ try {
   result = `FAILED: ${e instanceof Error ? e.message : e}`;
 }
 server.close();
-console.log([...writes, result].join("\n"));
+const refs = process.env.CENTRAL_PIPELINE_ENABLED
+  ? execSync("git --git-dir=/tmp/target.git for-each-ref --format='REFS %(refname)'", { encoding: "utf8" }).trim().split("\n")
+  : [];
+console.log([...writes, ...refs, result].filter(Boolean).join("\n"));

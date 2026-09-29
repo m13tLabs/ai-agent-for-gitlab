@@ -125,7 +125,7 @@ gitlabSetup:
     expiryDays: 90
     # -- Rotate the bot token this many days before it expires
     renewBeforeDays: 14
-  # Runner mode, set up in GitLab: the component project (imported from
+  # Runner mode, set up in GitLab: the component project (synced from
   # `component.cloneUrl`, made a CI/CD Catalog resource) and the runner
   # project whose .gitlab-ci.yml includes its agent-runner component. The bot
   # becomes Owner of both. `runner.project` is used as agent.runnerProject
@@ -138,13 +138,16 @@ gitlabSetup:
     component:
       # -- Full path of the component project; its group must exist
       project: ai/ai-agent-for-gitlab
-      # -- Git URL the component project is created from. A private source
-      # needs credentials in the URL, which are left out of the description.
+      # -- Git URL the component project is synced from. The setup Job clones
+      # it on every run and pushes its branches and tags into the component
+      # project (fast-forward only), so the Job needs access to it (a proxy
+      # goes into `additionalEnvs`), GitLab doesn't. A private source needs
+      # credentials in the URL; they're left out of descriptions and logs.
       cloneUrl: https://github.com/m13tLabs/ai-agent-for-gitlab.git
-      # -- Keep the component project in sync with `cloneUrl` as a pull mirror
-      # (started on every setup run) when the instance supports it: detected
-      # from the edition and license, needs GitLab Premium or Ultimate. On
-      # Free the project is imported once; delete it to re-import.
+      # -- Additionally let GitLab pull-mirror `cloneUrl` between setup runs,
+      # where the edition supports it (detected from edition and license:
+      # Premium or Ultimate). Needs GitLab itself to reach `cloneUrl`; if it
+      # can't, the setup Job logs a warning and its own sync carries on.
       mirror: true
       # -- Ref of the component the runner project includes (branch, tag or
       # SHA); empty = the component project's default branch

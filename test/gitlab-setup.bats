@@ -123,24 +123,30 @@ assert_output_lacks() {
   assert_output_contains "PATCH /apis/apps/v1/namespaces/test/deployments/web"
 }
 
-# setup_run with the central pipeline on (see the mock for its projects)
+# setup_run with the central pipeline on (see the mock for its projects and repos)
 central_run() {
   setup_run -e CENTRAL_PIPELINE_ENABLED=true \
     -e COMPONENT_PROJECT=ai/ai-agent-for-gitlab \
-    -e COMPONENT_CLONE_URL=https://user:secret@github.com/m13tLabs/ai-agent-for-gitlab.git \
+    -e COMPONENT_CLONE_URL=file:///tmp/source.git \
     -e RUNNER_PROJECT=ai/agent-runner \
     -e SETUP_GROUPS='[]' -e SETUP_PROJECTS='[]' "$@"
 }
 
-@test "central pipeline: component made a catalog resource, runner project created with the bot as Owner" {
+@test "central pipeline: Job pushes the source into the component project, runner project set up with the bot as Owner" {
   run central_run -e RUNNER_COMPONENT_INPUTS='{"tags":["ai-agent"]}'
   [ "$status" -eq 0 ]
   assert_output_contains "OK"
-  # Existing component project: description (link without credentials) synced, bot Owner, catalog on.
-  assert_output_contains 'PUT /api/v4/projects/30 {"description":"CI/CD component \"agent-runner\" of the AI agent for GitLab, imported from https://github.com/m13tLabs/ai-agent-for-gitlab.'
+  # Component project: description, bot Owner, all branches and tags pushed,
+  # default branch follows the source's HEAD, catalog on.
+  assert_output_contains 'PUT /api/v4/projects/30 {"description":"CI/CD component \"agent-runner\" of the AI agent for GitLab, synced from file:///tmp/source.'
   assert_output_contains 'POST /api/v4/projects/30/members {"user_id":7,"access_level":50}'
+  assert_output_contains "REFS refs/heads/develop"
+  assert_output_contains "REFS refs/heads/feature"
+  assert_output_contains "REFS refs/tags/v0.5.0"
+  assert_output_contains 'PUT /api/v4/projects/30 {"default_branch":"develop"}'
   assert_output_contains 'catalogResourcesCreate(input: { projectPath: $p })'
-  assert_output_lacks "secret@"
+  # CE: no pull mirror.
+  assert_output_lacks '"mirror":true'
   # Runner project created in group ai (20), bot Owner, files on a new main branch.
   assert_output_contains 'POST /api/v4/projects {"name":"agent-runner","path":"agent-runner","namespace_id":20'
   assert_output_contains 'POST /api/v4/projects/32/members {"user_id":7,"access_level":50}'
@@ -149,65 +155,62 @@ central_run() {
   assert_output_contains '"action":"create","file_path":"README.md"'
 }
 
+@test "central pipeline: new component project is created empty and filled by the push in the same run" {
+  run central_run -e MOCK_NO_COMPONENT=1
+  [ "$status" -eq 0 ]
+  assert_output_contains "OK"
+  assert_output_contains 'POST /api/v4/projects {"name":"ai-agent-for-gitlab","path":"ai-agent-for-gitlab","namespace_id":20'
+  assert_output_lacks "import_url"
+  assert_output_contains "REFS refs/heads/develop"
+  assert_output_contains 'PUT /api/v4/projects/31 {"default_branch":"develop"}'
+  # No waiting for an import: the runner project follows right away.
+  assert_output_contains "POST /api/v4/projects/32/repository/commits"
+}
+
 @test "central pipeline: component ref overrides the default branch" {
   run central_run -e COMPONENT_REF=v0.5.0
   [ "$status" -eq 0 ]
   assert_output_contains 'agent-runner@v0.5.0'
 }
 
-@test "central pipeline: new component project is imported, runner waits for the import" {
-  run central_run -e MOCK_NO_COMPONENT=1
-  [ "$status" -eq 0 ]
-  assert_output_contains "OK"
-  assert_output_contains '"import_url":"https://user:secret@github.com/m13tLabs/ai-agent-for-gitlab.git"'
-  assert_output_contains '"visibility":"private"'
-  assert_output_contains 'POST /api/v4/projects/31/members {"user_id":7,"access_level":50}'
-  # Import still running: no catalog, no runner project yet (next CronJob run).
-  assert_output_lacks "graphql"
-  assert_output_lacks "agent-runner\",\"path\""
-}
-
-@test "central pipeline: missing settings fail the setup" {
-  run setup_run -e CENTRAL_PIPELINE_ENABLED=true -e COMPONENT_PROJECT=ai/x
-  assert_output_contains "FAILED: Missing COMPONENT_CLONE_URL"
-}
-
-@test "central pipeline on Premium: existing component project becomes a pull mirror, synced every run" {
+@test "central pipeline on Premium: pull mirror enabled on top of the Job's sync" {
   run central_run -e MOCK_EDITION=premium
   [ "$status" -eq 0 ]
   assert_output_contains "OK"
-  assert_output_contains 'PUT /api/v4/projects/30 {"description":"CI/CD component \"agent-runner\" of the AI agent for GitLab, mirrored from https://github.com/m13tLabs/ai-agent-for-gitlab.'
-  assert_output_contains '"mirror":true,"import_url":"https://user:secret@github.com/m13tLabs/ai-agent-for-gitlab.git","mirror_trigger_builds":false,"mirror_overwrites_diverged_branches":true'
+  assert_output_contains "REFS refs/heads/develop"
+  assert_output_contains '"mirror":true,"import_url":"file:///tmp/source.git","mirror_trigger_builds":false,"mirror_overwrites_diverged_branches":true'
   assert_output_contains "POST /api/v4/projects/30/mirror/pull"
-  # Runner project setup continues although the triggered update now runs.
+}
+
+@test "central pipeline on Premium: a mirror GitLab can't reach only warns, the Job's sync carries on" {
+  run central_run -e MOCK_EDITION=premium -e MOCK_MIRROR_FAILS=1
+  [ "$status" -eq 0 ]
+  assert_output_contains "OK"
+  assert_output_contains "REFS refs/heads/develop"
+  assert_output_lacks "mirror/pull"
   assert_output_contains "POST /api/v4/projects/32/repository/commits"
 }
 
-@test "central pipeline on Premium: new component project is created as a pull mirror" {
-  run central_run -e MOCK_EDITION=premium -e MOCK_NO_COMPONENT=1
-  [ "$status" -eq 0 ]
-  assert_output_contains "OK"
-  assert_output_contains 'POST /api/v4/projects {"name":"ai-agent-for-gitlab"'
-  assert_output_contains '"mirror":true,"mirror_trigger_builds":false'
-  # First import still running: no sync trigger, no runner project yet.
-  assert_output_lacks "mirror/pull"
-  assert_output_lacks "agent-runner\",\"path\""
-}
-
-@test "central pipeline without Premium (EE unlicensed, CE) or with mirror off: import only" {
+@test "central pipeline without Premium (EE unlicensed, CE) or with mirror off: no pull mirror" {
   for args in "-e MOCK_EDITION=ee" "-e MOCK_EDITION=ce" "-e MOCK_EDITION=premium -e COMPONENT_MIRROR=false"; do
     # shellcheck disable=SC2086
     run central_run $args
     [ "$status" -eq 0 ]
     assert_output_contains "OK"
-    assert_output_contains "imported from https://github.com/m13tLabs/ai-agent-for-gitlab."
+    assert_output_contains "REFS refs/heads/develop"
     assert_output_lacks '"mirror":true'
     assert_output_lacks "mirror/pull"
   done
 }
 
-@test "central pipeline: an import URL GitLab can't reach fails with an explanation" {
-  run central_run -e MOCK_NO_COMPONENT=1 -e COMPONENT_CLONE_URL=https://unreachable.example/ai-agent-for-gitlab.git
-  assert_output_contains "FAILED: GitLab can't reach https://unreachable.example/ai-agent-for-gitlab to import ai/ai-agent-for-gitlab"
-  assert_output_contains "set gitlabSetup.centralPipeline.component.cloneUrl to a mirror GitLab can reach"
+@test "central pipeline: an unreachable source fails with an explanation and without its credentials" {
+  run central_run -e COMPONENT_CLONE_URL=https://user:s3cr3t-pw@unreachable.invalid/ai-agent-for-gitlab.git
+  assert_output_contains "FAILED: Could not clone https://unreachable.invalid/ai-agent-for-gitlab"
+  assert_output_contains "a proxy through additionalEnvs (HTTPS_PROXY)"
+  assert_output_lacks "s3cr3t-pw"
+}
+
+@test "central pipeline: missing settings fail the setup" {
+  run setup_run -e CENTRAL_PIPELINE_ENABLED=true -e COMPONENT_PROJECT=ai/x
+  assert_output_contains "FAILED: Missing COMPONENT_CLONE_URL"
 }
