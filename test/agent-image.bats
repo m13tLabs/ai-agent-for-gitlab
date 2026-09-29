@@ -113,6 +113,42 @@ fake_node_models_path='
   assert_output_contains "amazon-bedrock/eu.anthropic.claude-fable-5"
 }
 
+# Evaluate a JS expression against the runner modules, print the result.
+in_runner() {
+  in_image "cd /opt/agent && node --input-type=module -e '$1'"
+}
+
+@test "opencode API errors are reduced to the provider's message" {
+  # Tail of a real Bedrock failure (stderr of `opencode run --print-logs`).
+  run --separate-stderr in_runner '
+    const { parseOpencodeError } = await import("./src/opencode.js");
+    const log = [
+      "timestamp=2026-09-29T05:19:44.994Z level=ERROR message=\"stream error\" providerID=amazon-bedrock error.error=\"AI_APICallError: Forbidden\"",
+      "Error: Forbidden: {\"Message\":\"Authentication failed: Please make sure your API Key is valid.\"}",
+    ].join("\n");
+    console.log(parseOpencodeError(log));
+    console.log(parseOpencodeError("level=ERROR message=x error.error=\"AI_APICallError: Too Many Requests\""));
+    console.log(parseOpencodeError("Error: {\"error\":{\"type\":\"x\",\"message\":\"model not found\"}}"));
+    console.log("[" + parseOpencodeError("all good") + "]");
+  '
+  assert_output "$(printf '%s\n' \
+    'Forbidden: Authentication failed: Please make sure your API Key is valid.' \
+    'AI_APICallError: Too Many Requests' \
+    'model not found' \
+    '[]')"
+}
+
+@test "error comment links the failed job" {
+  run --separate-stderr in_runner '
+    const { failedJobLink } = await import("./src/runner.js");
+    console.log(failedJobLink({ CI_JOB_URL: "https://gl/j/1", CI_PIPELINE_URL: "https://gl/p/9", CI_PIPELINE_IID: "9" }));
+    console.log(failedJobLink({}));
+  '
+  assert_output "$(printf '%s\n' \
+    'See the [failed job](https://gl/j/1) of [pipeline #9](https://gl/p/9) for details.' \
+    'Please check the pipeline logs for details.')"
+}
+
 @test "carries the OCI source label" {
   run docker inspect -f '{{index .Config.Labels "org.opencontainers.image.source"}}' "$IMAGE"
   assert_output "https://github.com/m13tLabs/ai-agent-for-gitlab.git"

@@ -62,8 +62,18 @@ async function handleError(context, error) {
     context,
     `❌ AI encountered an error:\n\n` +
     `\`\`\`\n${error.message}\n\`\`\`\n\n` +
-    `Please check the pipeline logs for details.`,
+    failedJobLink(),
   );
   writeOutput(false, { error: error.message });
   process.exit(1);
+}
+
+// Link to this job's log (GitLab's predefined CI variables). In runner mode it
+// points into the runner project, which the commenter may not be able to open.
+export function failedJobLink(env = process.env) {
+  if (!env.CI_JOB_URL) return "Please check the pipeline logs for details.";
+  const pipeline = env.CI_PIPELINE_URL
+    ? ` of [pipeline #${env.CI_PIPELINE_IID || env.CI_PIPELINE_ID}](${env.CI_PIPELINE_URL})`
+    : "";
+  return `See the [failed job](${env.CI_JOB_URL})${pipeline} for details.`;
 }
