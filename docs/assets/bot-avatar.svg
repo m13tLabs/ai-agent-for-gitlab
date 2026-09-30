@@ -1,44 +1,51 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
   <title id="title">AI agent bot avatar</title>
-  <!-- Bot user avatar: the logo's robot face, full-bleed so GitLab's circular
-       avatar crop keeps the face. Rendered to charts/ai-agent-for-gitlab/files/bot-avatar.png
+  <!-- Bot user avatar: a fox-eared robot head with a visor, a signal antenna
+       and the logo's merge-request glyph as mouth, in the logo's colors. Kept
+       inside the center circle so GitLab's circular avatar crop keeps it whole.
+       Rendered to charts/ai-agent-for-gitlab/files/bot-avatar.png
        (GitLab avatars can't be SVG): see scripts/render-logos.sh. -->
   <defs>
-    <radialGradient id="bg" cx="0.5" cy="0.35" r="0.75">
-      <stop offset="0" stop-color="#7c3aed"/>
-      <stop offset="1" stop-color="#312e81"/>
-    </radialGradient>
-    <linearGradient id="face" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#ffffff"/>
-      <stop offset="1" stop-color="#e0e7ff"/>
+    <linearGradient id="head" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8b5cf6"/>
+      <stop offset="1" stop-color="#4338ca"/>
     </linearGradient>
   </defs>
 
-  <rect width="512" height="512" fill="url(#bg)"/>
-
-  <!-- antenna -->
-  <line x1="256" y1="110" x2="256" y2="152" stroke="#e0e7ff" stroke-width="14" stroke-linecap="round"/>
-  <circle cx="256" cy="102" r="19" fill="#22d3ee"/>
+  <rect width="512" height="512" fill="#eef2ff"/>
 
   <!-- ears -->
-  <rect x="110" y="228" width="34" height="80" rx="17" fill="#c7d2fe"/>
-  <rect x="368" y="228" width="34" height="80" rx="17" fill="#c7d2fe"/>
+  <g stroke="#1e1b4b" stroke-width="16" stroke-linejoin="round">
+    <path d="M146 236 Q126 132 170 92 Q214 132 238 200 Z" fill="#7c3aed"/>
+    <path d="M366 236 Q386 132 342 92 Q298 132 274 200 Z" fill="#7c3aed"/>
+  </g>
+  <path d="M166 210 Q156 150 176 124 Q198 152 210 196 Z" fill="#c4b5fd"/>
+  <path d="M346 210 Q356 150 336 124 Q314 152 302 196 Z" fill="#c4b5fd"/>
+
+  <!-- antenna, signal to one side -->
+  <line x1="256" y1="196" x2="256" y2="142" stroke="#1e1b4b" stroke-width="14" stroke-linecap="round"/>
+  <circle cx="256" cy="128" r="20" fill="#22d3ee" stroke="#1e1b4b" stroke-width="10"/>
+  <g fill="none" stroke="#22d3ee" stroke-width="10" stroke-linecap="round">
+    <path d="M288 102 A40 40 0 0 1 288 154"/>
+    <path d="M308 84 A64 64 0 0 1 308 172"/>
+  </g>
 
   <!-- head -->
-  <rect x="134" y="152" width="244" height="232" rx="72" fill="url(#face)"/>
+  <rect x="120" y="190" width="272" height="232" rx="96" fill="url(#head)" stroke="#1e1b4b" stroke-width="16"/>
 
-  <!-- eyes -->
-  <circle cx="206" cy="240" r="26" fill="#1e1b4b"/>
-  <circle cx="306" cy="240" r="26" fill="#1e1b4b"/>
-  <circle cx="215" cy="231" r="9" fill="#22d3ee"/>
-  <circle cx="315" cy="231" r="9" fill="#22d3ee"/>
+  <!-- visor with eyes -->
+  <rect x="96" y="244" width="320" height="88" rx="44" fill="#1e1b4b"/>
+  <rect x="164" y="272" width="64" height="32" rx="16" fill="#22d3ee"/>
+  <rect x="284" y="272" width="64" height="32" rx="16" fill="#22d3ee"/>
+  <circle cx="212" cy="282" r="6" fill="#ecfeff"/>
+  <circle cx="332" cy="282" r="6" fill="#ecfeff"/>
 
   <!-- mouth: merge-request branch glyph -->
-  <g fill="none" stroke="#4338ca" stroke-width="12" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M206 302 V342"/>
-    <path d="M206 302 C206 328 306 320 306 342"/>
+  <g fill="none" stroke="#e0e7ff" stroke-width="10" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M226 356 V388"/>
+    <path d="M226 356 C226 378 286 372 286 390"/>
   </g>
-  <circle cx="206" cy="302" r="13" fill="#7c3aed"/>
-  <circle cx="206" cy="344" r="13" fill="#4338ca"/>
-  <circle cx="306" cy="344" r="13" fill="#22d3ee"/>
+  <circle cx="226" cy="356" r="10" fill="#c4b5fd"/>
+  <circle cx="226" cy="390" r="10" fill="#e0e7ff"/>
+  <circle cx="286" cy="390" r="10" fill="#22d3ee"/>
 </svg>
