@@ -73,6 +73,7 @@ Details:
 - A review is only triggered when the AI user is **newly** added (on MR open/reopen or when reviewers/assignees change), so later pushes or title edits do not re-trigger it. Remove and re-add the reviewer to request another review.
 - Only open MRs are reviewed; the bot ignores assignments it made itself; the rate limit applies per user/project/MR.
 - The pipeline gets `AI_REVIEW=true`, so you can branch on it in `.gitlab-ci.yml` (e.g. a different `CUSTOM_AGENT_PROMPT`).
+- Concrete fixes are posted as native GitLab code suggestions on the changed lines ("Suggested change" with *Apply suggestion*), plus one summary comment linking them. Lines outside the MR diff get a regular comment with a link to the lines instead, since GitLab can only anchor suggestions on diff lines. This works for `@ai` requests on MRs too.
 - The review instructions come from `REVIEW_PROMPT` (a sensible default is built in), combined with `OPENCODE_AGENT_PROMPT` and `CUSTOM_AGENT_PROMPT` as usual.
 
 ### GitLab Pipeline

@@ -20,15 +20,15 @@ export interface MockResponse {
 export interface GitLabMock {
   url: string;
   requests: RecordedRequest[];
-  // Answers every request; default 201 {"id": 1}.
-  respond(res: MockResponse): void;
+  // Answers every request (or per request, with a function); default 201 {"id": 1}.
+  respond(res: MockResponse | ((req: RecordedRequest) => MockResponse)): void;
   close(): Promise<void>;
 }
 
 // Minimal GitLab REST stand-in: records requests and answers with a fixed response.
 export async function startGitLabMock(): Promise<GitLabMock> {
   const requests: RecordedRequest[] = [];
-  let response: MockResponse = { status: 201, body: { id: 1 } };
+  let response: MockResponse | ((req: RecordedRequest) => MockResponse) = { status: 201, body: { id: 1 } };
 
   const server = createServer((req, res) => {
     let raw = "";
@@ -40,9 +40,11 @@ export async function startGitLabMock(): Promise<GitLabMock> {
       } catch {
         // keep raw text
       }
-      requests.push({ method: req.method ?? "", url: req.url ?? "", headers: req.headers, body });
-      res.writeHead(response.status ?? 200, { "Content-Type": "application/json" });
-      res.end(typeof response.body === "string" ? response.body : JSON.stringify(response.body ?? {}));
+      const recorded = { method: req.method ?? "", url: req.url ?? "", headers: req.headers, body };
+      requests.push(recorded);
+      const answer = typeof response === "function" ? response(recorded) : response;
+      res.writeHead(answer.status ?? 200, { "Content-Type": "application/json" });
+      res.end(typeof answer.body === "string" ? answer.body : JSON.stringify(answer.body ?? {}));
     });
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
