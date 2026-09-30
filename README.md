@@ -110,7 +110,7 @@ You will need to add the following CI/CD variables in your GitLab project (Setti
   - `CEREBRAS_API_KEY`
   - `Z_API_KEY`
   - Or Azure OpenAI envs: `AZURE_API_KEY`, `AZURE_RESOURCE_NAME`: Your Azure OpenAI resource name (e.g., `my-azure-openai`). `OPENCODE_MODEL` then needs to be `azure/{Deployment Name}`.
-  - Or Bedrock envs: `AWS_ACCESS_KEY_ID` (or `AWS_PROFILE` / `AWS_BEARER_TOKEN_BEDROCK`)
+  - Or Bedrock envs: `AWS_ACCESS_KEY_ID` (or `AWS_PROFILE` / `AWS_BEARER_TOKEN_BEDROCK`), plus `AWS_REGION`. For an application inference profile, see [the Bedrock example](#example-amazon-bedrock-with-an-application-inference-profile).
 
 - `GITLAB_TOKEN`: Your GitLab Personal Access Token (with `api`, `read_repository`, `write_repository` permissions)
 
@@ -426,6 +426,62 @@ When a pipeline is triggered, these variables are available:
 Set the appropriate `provider key(s)` for your chosen `OPENCODE_MODEL` as listed above, plus:
 
 - `GITLAB_TOKEN`: Your GitLab Personal Access Token (with `api`, `read_repository`, `write_repository` permissions)
+
+### Custom opencode configuration
+
+The agent job runs opencode, which also reads an [opencode config](https://opencode.ai/docs/config/) (JSON with `//` comments). Your settings are merged with the GitLab MCP server the agent configures itself, so they don't replace it. There are three ways to pass one:
+
+| Where | How | Scope |
+| --- | --- | --- |
+| CI/CD variable of type **File** named `OPENCODE_CONFIG` | the variable's content is the config; GitLab passes its path | runner project (runner mode), or group/project |
+| `opencode.jsonc` or `.opencode/opencode.jsonc` in the target repository | committed to the repository | that repository |
+| CI/CD or pipeline variable `OPENCODE_CONFIG_CONTENT` | the config itself | wherever the variable is defined |
+
+Where settings conflict, the later source in this order wins: the agent's own config, `OPENCODE_CONFIG`, the repository's `opencode.jsonc`, `OPENCODE_CONFIG_CONTENT`. `{env:VAR}` inside a config is replaced by that environment variable, so secrets can stay in masked CI/CD variables.
+
+#### Example: Amazon Bedrock with an application inference profile
+
+This routes every request through one Bedrock application inference profile, e.g. for cost tracking, and hides all other models. In runner mode it goes into the Helm values:
+
+```yaml
+agent:
+  model: amazon-bedrock/anthropic.claude-opus-4-6-v1   # always provider/model
+
+gitlabSetup:
+  centralPipeline:
+    runner:
+      extraConfig: |
+        variables:
+          # ARN or ID of the application inference profile
+          OPENCODE_MODEL_ID: arn:aws:bedrock:eu-central-1:123456789012:application-inference-profile/abc123
+          OPENCODE_CONFIG_CONTENT: |
+            {
+              "$schema": "https://opencode.ai/config.json",
+              "disabled_providers": ["opencode"], // only AWS Bedrock
+              "autoupdate": false,
+              "model": "{env:OPENCODE_MODEL}",
+              "small_model": "{env:OPENCODE_MODEL}",
+              "provider": {
+                "amazon-bedrock": {
+                  // the bare model ID, without "amazon-bedrock/"
+                  "whitelist": ["anthropic.claude-opus-4-6-v1"],
+                  "options": { "region": "eu-central-1" },
+                  "models": {
+                    "anthropic.claude-opus-4-6-v1": { "id": "{env:OPENCODE_MODEL_ID}" }
+                  }
+                }
+              },
+              "share": "disabled"
+            }
+```
+
+- **`model` and `small_model`** take `{env:OPENCODE_MODEL}`, the full `provider/model` value the webhook passes from `agent.model`.
+- **`whitelist` and the key under `models`** take the bare model ID. `{env:OPENCODE_MODEL}` would put `amazon-bedrock/…` there, which matches no model. Using the catalog's own ID (here `anthropic.claude-opus-4-6-v1`) keeps opencode's known limits for that model, and `agent.validateModel` keeps passing. An alias of your own also works, but then set `agent.validateModel: false`, since the alias isn't in the catalog.
+- **`"id"`** is what opencode sends to Bedrock as the model ID, here the inference profile ARN.
+- **`small_model`** is set to the same model, because opencode otherwise uses a small default model for titles and summaries. That default can sit in another region and fail with `Forbidden` where only EU inference is allowed.
+- **YAML:** use `|` for `OPENCODE_CONFIG_CONTENT`. With `>-`, lines can be joined, and a `//` comment would then swallow the text after it.
+- **Credentials:** add `AWS_BEARER_TOKEN_BEDROCK` (a long-term Bedrock API key; short-term keys expire after at most 12 hours) and `AWS_REGION` to the runner project as masked, not protected CI/CD variables, or let its runner inject them. The key's identity needs `bedrock:InvokeModel` on the inference profile.
+- **Without runner mode:** set `OPENCODE_MODEL_ID` and `OPENCODE_CONFIG_CONTENT` as CI/CD variables on the group or project instead of in `extraConfig`.
 
 ### Agent Prompt Configuration & Combination
 
