@@ -27,8 +27,10 @@ const MAX_PROMPT_CHARS = 8000;
 
 const DEFAULT_REVIEW_PROMPT =
   "You have been requested to review this merge request. Use the context tool to read the MR and its diff against the target branch. " +
-  "Post a single review comment covering correctness bugs, security issues, missing tests and notable maintainability concerns, " +
-  "each with file/line references and a concrete suggestion. Do not commit or push any changes unless explicitly asked.";
+  "Look for correctness bugs, security issues, missing tests and notable maintainability concerns. " +
+  "For each finding with a concrete code fix, post it with the code suggestion tool on the affected lines, so it can be applied from the MR. " +
+  "Then post a single summary comment listing all findings with file/line references and links to the posted suggestions. " +
+  "Do not commit or push any changes unless explicitly asked.";
 
 // Variables shared by every AI pipeline, independent of the trigger type
 function commonPipelineVariables(triggerPhrase: string): Record<string, string> {

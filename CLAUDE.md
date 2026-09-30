@@ -17,6 +17,7 @@ GitLab AI agent: a webhook middleware triggers GitLab CI pipelines that run an o
 
 - Pipeline trigger variables take precedence over `.gitlab-ci.yml` variables. That is why forwarding `AI_AGENT_IMAGE` from the app pins the image for every project.
 - An empty `AI_DISCUSSION_ID` makes the agent post a top-level MR note, which is what reviews use. A non-empty one makes it reply in that thread.
+- `create_gitlab_code_suggestion` (MCP, MRs only) posts a diff discussion (`POST .../discussions` with a `position` from the MR's `diff_refs`) whose body is a ```` ```suggestion:-N+0 ```` block anchored on the range's last line. That line must be in the MR diff (`src/suggestion.ts` maps it from `GET .../diffs`: added lines send only `new_line`, context lines also `old_line`); otherwise, or when GitLab rejects the position, it posts a regular note with a blob permalink instead. **Not yet verified against a real GitLab.**
 - Assignment reviews fire only on a *transition* (`changes.reviewers/assignees` previous → current) or on `open`/`reopen`, so pushes and title edits never re-trigger.
 - `ADMIN_TOKEN` must be set. `bearerAuth` is created when the module loads, so the app fails without it. The chart generates one if none is given.
 - The `/admin/disable|enable` state is in memory per process. It does not work across multiple replicas.
