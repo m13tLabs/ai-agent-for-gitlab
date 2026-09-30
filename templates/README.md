@@ -13,7 +13,7 @@ include:
       job-name: ai_webhook_handler
       stage: ai
       tags: []
-      version: 0.8.0
+      version: 0.9.0
 ```
 
 ## Inputs
@@ -25,7 +25,7 @@ include:
 | job-name | string | `ai_webhook_handler` |  | Name of the agent job. |
 | stage | string | `ai` |  | Pipeline stage the agent job runs in. |
 | tags | array | `[]` |  | Runner tags, e.g. of a dedicated runner that injects the provider keys from a Kubernetes Secret. |
-| version | string | `0.8.0` |  | Agent image tag, e.g. the release version (`0.5.0`). See `image`. |
+| version | string | `0.9.0` |  | Agent image tag, e.g. the release version (`0.5.0`). See `image`. |
 
 ## Variables
 
