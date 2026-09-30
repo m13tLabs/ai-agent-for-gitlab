@@ -1,4 +1,23 @@
 
+## [0.9.0](https://github.com/m13tLabs/ai-agent-for-gitlab/compare/v0.8.0...v0.9.0) (2026-09-30)
+
+### Documentation
+
+* Add intro to use opencode + bedrock ([f48cd2f](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/f48cd2f4486cbde5d0354d21b2778e1d28d5ef2b))
+
+
+
+### Features
+
+* **Gitlab:** Add project logo to ai projects ([762fc37](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/762fc37965b5b31881e85babbb5fa143db068470))
+
+* **Gitlab:** Re-use webhook secret and not re-generate ([a288c5d](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/a288c5d044497885b746387071952a1298b3d20e))
+
+* **Gitlab:** Better integration feedback within Gitlab ([c85c4be](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/c85c4be9bc07197f8ad324fcc2584a60fd2cbff4))
+
+
+
+
 ## [0.8.0](https://github.com/m13tLabs/ai-agent-for-gitlab/compare/v0.7.0...v0.8.0) (2026-09-29)
 
 ### Bug Fixes
