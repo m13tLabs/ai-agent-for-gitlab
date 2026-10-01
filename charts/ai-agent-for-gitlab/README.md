@@ -91,7 +91,7 @@ GitLab webhook middleware that triggers AI agent pipelines on @ai mentions and w
 | redis.externalUrl | string | `""` | Redis URL to use when redis.enabled is false (e.g. a managed Redis) |
 | redis.image.pullPolicy | string | `"IfNotPresent"` |  |
 | redis.image.repository | string | `"redis"` |  |
-| redis.image.tag | string | `"7-alpine"` |  |
+| redis.image.tag | string | `"8-alpine"` |  |
 | redis.persistence.enabled | bool | `false` |  |
 | redis.persistence.size | string | `"1Gi"` |  |
 | redis.persistence.storageClass | string | `""` |  |
