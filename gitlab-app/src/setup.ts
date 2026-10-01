@@ -27,6 +27,10 @@
 //      and on Premium/Ultimate also pull-mirrored by GitLab, made a CI/CD
 //      Catalog resource, and the runner project whose .gitlab-ci.yml includes
 //      its agent-runner component; the bot is Owner of both
+//   8. optional (COMMENT_TEMPLATES_ENABLED, Premium/Ultimate only): group
+//      comment templates for the `/review` and `/help` commands on the topmost
+//      groups matching `SETUP_GROUPS` (subgroups and projects inherit them),
+//      kept in sync with commands.ts; failures only warn
 //
 // SETUP_GROUPS / SETUP_PROJECTS are JSON arrays of glob patterns (`*`, `?`,
 // matched case-insensitively against the full path; `*` also matches `/`) or
@@ -38,6 +42,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { COMMENT_TEMPLATE_PREFIX, commentTemplates } from "./commands.ts";
 import { logger } from "./logger.ts";
 
 const HOOK_NAME = "ai-agent-for-gitlab";
@@ -102,6 +107,9 @@ export interface SetupConfig {
     // Logo uploaded as avatar of both projects while they have none; "" = off.
     avatarPath: string;
   };
+  // Group comment templates for the commands (Premium/Ultimate), written with
+  // this trigger phrase; "" = off.
+  commentTemplates: { enabled: boolean; triggerPhrase: string };
 }
 
 export interface Target {
@@ -220,6 +228,10 @@ export async function loadConfig(env = process.env): Promise<SetupConfig> {
       initialSetupOnly: env.RUNNER_INITIAL_SETUP_ONLY === "true",
       visibility: env.CENTRAL_PIPELINE_VISIBILITY || "private",
       avatarPath: env.PROJECT_AVATAR_PATH || "",
+    },
+    commentTemplates: {
+      enabled: env.COMMENT_TEMPLATES_ENABLED === "true",
+      triggerPhrase: env.TRIGGER_PHRASE || "@ai",
     },
   };
 }
@@ -563,13 +575,16 @@ async function ensureMember(
   return true;
 }
 
-async function ensureMemberships(cfg: SetupConfig, gl: ReturnType<typeof gitlab>, userId: number) {
-  const groups = topmostGroups(await resolveTargets(gl, "groups", cfg.groups));
+// Returns all groups matching SETUP_GROUPS, for the comment templates step.
+async function ensureMemberships(cfg: SetupConfig, gl: ReturnType<typeof gitlab>, userId: number): Promise<Resolved[]> {
+  const selected = await resolveTargets(gl, "groups", cfg.groups);
+  const groups = topmostGroups(selected);
   let added = 0;
   for (const { item, path, target } of groups) {
     if (await ensureMember(gl, "groups", item.id, path, userId, target.accessLevel)) added++;
   }
   logger.info("Group memberships in sync", { groups: groups.length, added });
+  return selected;
 }
 
 // One failing project (e.g. missing permissions) must not stop the others or
@@ -851,12 +866,21 @@ export interface Edition {
   plan: string;
 }
 
-// EE with a valid Premium/Ultimate license; pull mirroring needs that.
-export function canPullMirror(edition: Edition): boolean {
+// EE with a valid Premium/Ultimate license; pull mirroring and group comment
+// templates need that.
+export function isPremium(edition: Edition): boolean {
   return edition.enterprise && ["premium", "ultimate"].includes(edition.plan);
 }
 
-async function detectEdition(gl: ReturnType<typeof gitlab>): Promise<Edition> {
+// Detected once per run, however many steps ask.
+const editions = new WeakMap<object, Promise<Edition>>();
+function detectEdition(gl: ReturnType<typeof gitlab>): Promise<Edition> {
+  let edition = editions.get(gl);
+  if (!edition) editions.set(gl, (edition = fetchEdition(gl)));
+  return edition;
+}
+
+async function fetchEdition(gl: ReturnType<typeof gitlab>): Promise<Edition> {
   const optional = async (path: string): Promise<Json | null> => {
     try {
       return await gl.request("GET", path);
@@ -871,7 +895,7 @@ async function detectEdition(gl: ReturnType<typeof gitlab>): Promise<Edition> {
   const license = enterprise ? await optional("/license") : null;
   const plan = license && !license.expired ? String(license.plan ?? "").toLowerCase() : "";
   const edition = { version: metadata?.version ?? "unknown", enterprise, plan };
-  logger.info("GitLab edition", { ...edition, pullMirroring: canPullMirror(edition) });
+  logger.info("GitLab edition", { ...edition, premium: isPremium(edition) });
   return edition;
 }
 
@@ -927,7 +951,7 @@ async function ensureComponentProject(cfg: SetupConfig, gl: ReturnType<typeof gi
   }
 
   await ensureCatalogResource(gl, cp.componentProject);
-  if (cp.mirror && canPullMirror(await detectEdition(gl))) await ensurePullMirror(cfg, gl, project);
+  if (cp.mirror && isPremium(await detectEdition(gl))) await ensurePullMirror(cfg, gl, project);
   return gl.request("GET", `/projects/${project.id}`);
 }
 
@@ -1245,6 +1269,78 @@ async function restartDeployment(
   }
 }
 
+// Group comment templates (Settings > Comment templates; GraphQL only) for the
+// commands, on the topmost selected groups: the editor lists a group's
+// templates together with its ancestors', so subgroups and projects get them
+// too. Templates are matched by name; ours carry COMMENT_TEMPLATE_PREFIX, and
+// ones with that prefix that are no longer in the list are removed.
+async function ensureCommentTemplates(cfg: SetupConfig, gl: ReturnType<typeof gitlab>, selected: Resolved[]) {
+  const edition = await detectEdition(gl);
+  if (!isPremium(edition)) {
+    logger.info("Group comment templates need GitLab Premium or Ultimate, skipped", { plan: edition.plan || "none" });
+    return;
+  }
+  const paths = new Set(selected.map((s) => s.path.toLowerCase()));
+  const roots = selected.filter((s) => {
+    const parts = s.path.toLowerCase().split("/");
+    return !parts.slice(1).some((_, i) => paths.has(parts.slice(0, i + 1).join("/")));
+  });
+  const wanted = commentTemplates(cfg.commentTemplates.triggerPhrase);
+
+  const mutate = async (mutation: string, input: Json) => {
+    const data = await gl.graphql(`mutation($input: ${mutation}Input!) { ${lowerFirst(mutation)}(input: $input) { errors } }`, {
+      input,
+    });
+    const errors: string[] = data[lowerFirst(mutation)]?.errors ?? [];
+    if (errors.length) throw new Error(`${mutation} failed: ${errors.join("; ")}`);
+  };
+
+  let changed = 0;
+  for (const { item, path } of roots) {
+    try {
+      const existing = await groupCommentTemplates(gl, path);
+      for (const template of wanted) {
+        const current = existing.find((t) => t.name === template.name);
+        if (!current) {
+          await mutate("GroupSavedReplyCreate", { groupId: `gid://gitlab/Group/${item.id}`, ...template });
+        } else if (current.content !== template.content) {
+          await mutate("GroupSavedReplyUpdate", { id: current.id, ...template });
+        } else continue;
+        changed++;
+      }
+      for (const stale of existing) {
+        if (!stale.name.startsWith(COMMENT_TEMPLATE_PREFIX) || wanted.some((t) => t.name === stale.name)) continue;
+        await mutate("GroupSavedReplyDestroy", { id: stale.id });
+        changed++;
+      }
+    } catch (e) {
+      logger.warn("Could not sync comment templates", { group: path, error: e instanceof Error ? e.message : e });
+    }
+  }
+  logger.info("Comment templates in sync", { groups: roots.length, changed });
+}
+
+async function groupCommentTemplates(gl: ReturnType<typeof gitlab>, path: string): Promise<Json[]> {
+  const templates: Json[] = [];
+  let after: string | null = null;
+  do {
+    const data = await gl.graphql(
+      "query($p: ID!, $after: String) { group(fullPath: $p) { savedReplies(first: 100, after: $after) " +
+        "{ nodes { id name content } pageInfo { hasNextPage endCursor } } } }",
+      { p: path, after }
+    );
+    const page = data.group?.savedReplies;
+    if (!page) throw new Error(`no access to the comment templates of ${path}`);
+    templates.push(...page.nodes);
+    after = page.pageInfo.hasNextPage ? page.pageInfo.endCursor : null;
+  } while (after);
+  return templates;
+}
+
+function lowerFirst(s: string): string {
+  return s[0].toLowerCase() + s.slice(1);
+}
+
 export async function runSetup(cfg: SetupConfig) {
   const gl = gitlab(cfg);
 
@@ -1257,11 +1353,14 @@ export async function runSetup(cfg: SetupConfig) {
   }
 
   const bot = await ensureBot(cfg, gl);
-  await ensureMemberships(cfg, gl, bot.id);
+  const groups = await ensureMemberships(cfg, gl, bot.id);
   if (cfg.hook.enabled) await ensureSystemHook(cfg, gl);
   await ensureProjects(cfg, gl, bot.id);
   const botToken = await ensureBotToken(cfg, gl, bot.id);
   if (!botToken.rotated) await ensureDeploymentConfig(cfg);
+  if (cfg.commentTemplates.enabled) {
+    await cosmetic("Could not sync comment templates", () => ensureCommentTemplates(cfg, gl, groups));
+  }
   // Last, so a failure here (e.g. a missing group) fails the Job only after
   // the token rotation is done.
   if (cfg.centralPipeline.enabled) await ensureCentralPipeline(cfg, gl, bot.id, botToken.token);

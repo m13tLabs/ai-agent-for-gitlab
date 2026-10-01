@@ -175,6 +175,15 @@ gitlabSetup:
       # the component's `job-name` input is merged with the agent job, e.g.
       # `{ai-review: {extends: [.proxy_setup]}}`.
       extraConfig: ""
+  commentTemplates:
+    # -- Maintain group comment templates for the `/review` and `/help`
+    # commands (named `AI agent: ...`, written with the trigger phrase) on the
+    # top-level groups selected by `groups`; subgroups and projects inherit
+    # them. Members insert them from the editor toolbar (Comment templates).
+    # Needs GitLab Premium or Ultimate (detected from edition and license),
+    # skipped otherwise. Templates are only changed when they differ, so
+    # manual edits to them are overwritten on the next run.
+    enabled: true
   # -- CronJob schedule for re-syncing (new groups/projects, token rotation)
   schedule: "17 * * * *"
   resources:

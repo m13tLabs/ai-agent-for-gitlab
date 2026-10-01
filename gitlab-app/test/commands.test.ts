@@ -2,7 +2,7 @@ import { after, before, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { buildReviewPrompt, CommandError, commandsHelp, parseCommand } from "../src/commands.ts";
+import { buildReviewPrompt, CommandError, commandsHelp, commentTemplates, parseCommand } from "../src/commands.ts";
 
 describe("parseCommand", () => {
   it("ignores regular prompts", () => {
@@ -67,6 +67,19 @@ describe("commandsHelp", () => {
   it("uses the trigger phrase", () => {
     assert.match(commandsHelp("@agent"), /`@agent \/review codeoptimize`/);
     assert.doesNotMatch(commandsHelp("@agent"), /@ai/);
+  });
+});
+
+describe("commentTemplates", () => {
+  it("has one valid command per template, with the trigger phrase", () => {
+    const templates = commentTemplates("@bot");
+    assert.equal(templates.length, 8);
+    assert.equal(new Set(templates.map((t) => t.name)).size, 8);
+    for (const { name, content } of templates) {
+      assert.match(name, /^AI agent: /);
+      assert.ok(content.startsWith("@bot /"));
+      assert.ok(parseCommand(content.slice("@bot ".length)), `${content} must parse`);
+    }
   });
 });
 
