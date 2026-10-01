@@ -28,6 +28,11 @@
 //            GitLab without outbound access.
 //   edition  CE, or EE with MOCK_EDITION=premium (Premium license) /
 //            MOCK_EDITION=ee (no license)
+//   comment templates (GraphQL savedReplies): none, or with
+//            MOCK_TEMPLATES=existing on team-a: "AI agent: review" (current),
+//            "AI agent: review security" (outdated content), "AI agent:
+//            obsolete" (no longer in the list) and "Team template" (someone
+//            else's). MOCK_TEMPLATES_FAIL: every mutation returns errors.
 import { execSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import http from "node:http";
@@ -73,6 +78,12 @@ if (process.env.MOCK_RUNNER_EXISTS) {
   centralProjects.push({ id: 32, path_with_namespace: "ai/agent-runner", default_branch: "main", http_url_to_repo: TARGET });
 }
 const edition = process.env.MOCK_EDITION || "ce";
+const existingTemplates = [
+  { id: "gid://gitlab/Groups::SavedReply/1", name: "AI agent: review", content: "@review-agent /review" },
+  { id: "gid://gitlab/Groups::SavedReply/2", name: "AI agent: review security", content: "@ai /review security" },
+  { id: "gid://gitlab/Groups::SavedReply/3", name: "AI agent: obsolete", content: "@review-agent /obsolete" },
+  { id: "gid://gitlab/Groups::SavedReply/4", name: "Team template", content: "LGTM" },
+];
 
 const writes = [];
 
@@ -89,9 +100,14 @@ function route(method, url, body) {
   const path = url.pathname;
   let m;
   if (method === "POST" && path === "/api/graphql") {
-    return JSON.parse(body).query.startsWith("query")
-      ? [200, { data: { ciCatalogResource: null } }]
-      : [200, { data: { catalogResourcesCreate: { errors: [] } } }];
+    const { query, variables } = JSON.parse(body);
+    if (query.includes("savedReplies")) {
+      const nodes = process.env.MOCK_TEMPLATES === "existing" && variables.p === "team-a" ? existingTemplates : [];
+      return [200, { data: { group: { savedReplies: { nodes, pageInfo: { hasNextPage: false, endCursor: null } } } } }];
+    }
+    if (query.startsWith("query")) return [200, { data: { ciCatalogResource: null } }];
+    const field = query.match(/\{\s*(\w+)\(/)[1];
+    return [200, { data: { [field]: { errors: process.env.MOCK_TEMPLATES_FAIL && field.startsWith("groupSavedReply") ? ["Name has already been taken"] : [] } } }];
   }
   if (method === "POST" && path === "/api/v4/projects") {
     const { name, description } = JSON.parse(body);

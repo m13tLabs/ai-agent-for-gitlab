@@ -104,7 +104,10 @@ Slash commands after the trigger phrase, modeled on GitLab quick actions:
 - The pipeline gets `AI_REVIEW=true` like an assignment review, plus `AI_REVIEW_INLINE=false` with `#inline_comment=False`.
 
 > [!NOTE]
-> GitLab's `/` autocomplete only lists GitLab's own quick actions, so it can't offer these commands. The bot user does show up in `@` autocomplete when it's a project member. To insert a command with a click, save it as a [comment template](https://docs.gitlab.com/user/profile/comment_templates/) (per user on every tier, per group or project on Premium/Ultimate) and pick it from the editor toolbar.
+> GitLab's `/` autocomplete only lists GitLab's own quick actions, so it can't offer these commands. The bot user does show up in `@` autocomplete when it's a project member. To insert a command with a click, use [comment templates](https://docs.gitlab.com/user/profile/comment_templates/) from the editor toolbar:
+>
+> - **Premium/Ultimate with the Helm chart's `gitlabSetup`:** the setup Job maintains group templates `AI agent: review`, `AI agent: review security`, ..., `AI agent: help` on the top-level groups of `gitlabSetup.groups`, so every subgroup and project gets them (`gitlabSetup.commentTemplates.enabled`, on by default).
+> - **Free/CE:** group and project templates don't exist there; each user can save the commands as personal templates (*Preferences > Comment templates*).
 
 ### GitLab Pipeline
 
