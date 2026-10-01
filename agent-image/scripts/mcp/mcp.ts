@@ -31,6 +31,9 @@ export interface GitLabConfig {
   resourceType: "issue" | "merge_request";
   discussionId?: string; // if present for MR, reply in same discussion
   aiUsername?: string; // the agent's own GitLab user, for list_gitlab_discussions
+  // false (`/review #inline_comment=False`): no code suggestion tool, so the
+  // review goes into a single comment
+  inlineSuggestions?: boolean;
 }
 
 // Fields the tools read from GitLab's issue / MR payloads.
@@ -97,8 +100,7 @@ export class GitLabMCPServer {
 
   private setupToolHandlers() {
     this.server.setRequestHandler(ListToolsRequestSchema, async () => {
-      return {
-        tools: [
+      const tools = [
           {
             name: "create_gitlab_comment",
             description:
@@ -185,7 +187,11 @@ export class GitLabMCPServer {
               additionalProperties: false,
             },
           },
-        ],
+        ];
+      return {
+        tools: tools.filter(
+          (t) => this.inlineSuggestions() || t.name !== "create_gitlab_code_suggestion"
+        ),
       };
     });
 
@@ -196,7 +202,7 @@ export class GitLabMCPServer {
         if (name === "create_gitlab_comment") {
           const parsed = CreateCommentSchema.parse(args);
           return await this.createComment(parsed);
-        } else if (name === "create_gitlab_code_suggestion") {
+        } else if (name === "create_gitlab_code_suggestion" && this.inlineSuggestions()) {
           const parsed = CreateCodeSuggestionSchema.parse(args);
           return await this.createCodeSuggestion(parsed);
         } else if (name === "list_gitlab_discussions") {
@@ -346,6 +352,10 @@ export class GitLabMCPServer {
     return diffs;
   }
 
+  private inlineSuggestions(): boolean {
+    return this.config.inlineSuggestions !== false;
+  }
+
   private textResult(text: string) {
     return { content: [{ type: "text", text }] };
   }
@@ -414,6 +424,7 @@ export function configFromEnv(env: Env = process.env): GitLabConfig {
     resourceType: env.AI_RESOURCE_TYPE === "merge_request" ? "merge_request" : "issue",
     discussionId: env.AI_DISCUSSION_ID || undefined,
     aiUsername: env.AI_GITLAB_USERNAME || undefined,
+    inlineSuggestions: env.AI_REVIEW_INLINE !== "false",
   };
 }
 

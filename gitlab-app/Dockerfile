@@ -4,7 +4,7 @@
 #
 # Runs src/*.ts directly on Node 24 LTS (native type stripping, no build
 # output). Node doesn't type-check, so the typecheck stage below does - a type
-# error fails the image build (and with it CI).
+# error or failing unit test fails the image build (and with it CI).
 
 # ---------------------------------------------------------------------------
 # Typecheck
@@ -17,7 +17,8 @@ COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY tsconfig.json ./
 COPY src/ ./src/
-RUN npm run typecheck
+COPY test/ ./test/
+RUN npm run typecheck && npm test
 
 # ---------------------------------------------------------------------------
 # Runtime

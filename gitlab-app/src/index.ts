@@ -11,7 +11,15 @@ import {
   addReactionToMergeRequest,
   getDiscussionThread,
   postErrorNote,
+  postNote,
 } from "./gitlab.ts";
+import {
+  buildReviewPrompt,
+  commandsHelp,
+  CommandError,
+  parseCommand,
+  type Command,
+} from "./commands.ts";
 import { limitByUser } from "./limiter.ts";
 import { logger } from "./logger.ts";
 import type {
@@ -24,13 +32,6 @@ const app = new Hono();
 
 // Enforce size limit for CI variable safety
 const MAX_PROMPT_CHARS = 8000;
-
-const DEFAULT_REVIEW_PROMPT =
-  "You have been requested to review this merge request. Use the context tool to read the MR and its diff against the target branch. " +
-  "Look for correctness bugs, security issues, missing tests and notable maintainability concerns. " +
-  "For each finding with a concrete code fix, post it with the code suggestion tool on the affected lines, so it can be applied from the MR. " +
-  "Then post a single summary comment listing all findings with file/line references and links to the posted suggestions. " +
-  "Do not commit or push any changes unless explicitly asked.";
 
 // Variables shared by every AI pipeline, independent of the trigger type
 function commonPipelineVariables(triggerPhrase: string): Record<string, string> {
@@ -54,22 +55,6 @@ function commonPipelineVariables(triggerPhrase: string): Record<string, string> 
   }
 
   return variables;
-}
-
-// Review prompt for a reviewer/assignee request or a "<trigger> review" comment;
-// `extra` is whatever the commenter wrote after "review".
-function reviewPrompt(
-  mr: { iid: number; title: string; source_branch: string; target_branch: string; description?: string },
-  extra = ""
-): string {
-  const instructions = process.env.REVIEW_PROMPT || DEFAULT_REVIEW_PROMPT;
-  const additions = extra ? `\n\n=== Additional Instructions ===\n${extra}` : "";
-  return truncatePrompt(
-    `${instructions}${additions}\n\n=== Merge Request !${mr.iid}: ${mr.title} ===\n` +
-      `Source: ${mr.source_branch} -> Target: ${mr.target_branch}\n\n${
-        mr.description || ""
-      }`.trim()
-  );
 }
 
 type ThreadNote = Awaited<ReturnType<typeof getDiscussionThread>>[number];
@@ -182,7 +167,9 @@ async function handleMergeRequestHook(body: MergeRequestHookPayload) {
   }
 
   const triggerPhrase = process.env.TRIGGER_PHRASE || "@ai";
-  const prompt = reviewPrompt(mr);
+  const prompt = truncatePrompt(
+    buildReviewPrompt({ basePrompt: process.env.REVIEW_PROMPT, mr })
+  );
 
   const minimalPayload = {
     object_kind: body.object_kind,
@@ -398,6 +385,44 @@ app.post("/webhook", async (c) => {
     resourceId: mrIid || issueIid,
   });
 
+  // Extract the prompt after the trigger phrase
+  const promptMatch = note.match(
+    new RegExp(
+      `${triggerPhrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s+(.*)`,
+      "is"
+    )
+  );
+
+  const directPrompt = promptMatch ? promptMatch[1].trim() : "";
+
+  // Slash commands (/review, /help), parsed before an issue branch is created
+  const noteTarget = { projectId, mrIid, issueIid, discussionId };
+  let command: Command | null;
+  try {
+    command = parseCommand(directPrompt, triggerPhrase);
+  } catch (error) {
+    if (!(error instanceof CommandError)) throw error;
+    await postNote({ ...noteTarget, body: `:warning: ${error.message}` });
+    return c.text("invalid-command");
+  }
+
+  if (command?.name === "help") {
+    await postNote({
+      ...noteTarget,
+      body: `Available commands:\n\n${commandsHelp(triggerPhrase)}`,
+    });
+    return c.text("help");
+  }
+
+  const review = command?.name === "review" ? command : undefined;
+  if (review && !body.merge_request) {
+    await postNote({
+      ...noteTarget,
+      body: ":warning: `/review` works on merge requests only.",
+    });
+    return c.text("review-needs-merge-request");
+  }
+
   // Determine branch ref
   let ref = body.merge_request?.source_branch;
 
@@ -439,27 +464,19 @@ app.post("/webhook", async (c) => {
     return c.text("no-branch-ref", 400);
   }
 
-  // Extract the prompt after the trigger phrase
-  const promptMatch = note.match(
-    new RegExp(
-      `${triggerPhrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s+(.*)`,
-      "is"
-    )
-  );
+  let aggregatedPrompt = directPrompt;
 
-  const directPrompt = promptMatch ? promptMatch[1].trim() : "";
-  let aggregatedPrompt = truncatePrompt(directPrompt);
-
-  // "<trigger> review [extra instructions]" on an MR runs a review, like
-  // requesting the AI user as reviewer: top-level note (no discussion ID),
-  // AI_REVIEW=true. The agent itself loads its earlier findings.
-  const reviewMatch = body.merge_request ? directPrompt.match(/^review\b\s*(.*)$/is) : null;
-  const isReview = !!(reviewMatch && body.merge_request);
-  if (reviewMatch && body.merge_request) {
-    aggregatedPrompt = reviewPrompt(body.merge_request, reviewMatch[1].trim());
-    logger.info("Review requested via comment", { projectId, mrIid, requestedBy: authorUsername });
+  if (review && body.merge_request) {
+    aggregatedPrompt = buildReviewPrompt({
+      basePrompt: process.env.REVIEW_PROMPT,
+      aspects: review.aspects,
+      inline: review.inline,
+      instructions: review.instructions,
+      author: authorUsername,
+      mr: body.merge_request,
+    });
   } else if (discussionId) {
-    // With a discussion id, prepend the rest of the triggering thread
+    // Fetch the whole discussion thread and prepend it
     try {
       const threadNotes = await getDiscussionThread({
         projectId: projectId!,
@@ -516,8 +533,11 @@ app.post("/webhook", async (c) => {
     AI_RESOURCE_ID: String(mrIid || issueIid || ""),
     AI_PROJECT_PATH: projectPath,
     AI_BRANCH: ref,
-    AI_DISCUSSION_ID: isReview ? "" : discussionId,
-    ...(isReview && { AI_REVIEW: "true" }),
+    AI_DISCUSSION_ID: discussionId,
+    // Like assignment reviews; AI_REVIEW_INLINE=false also hides the agent's
+    // code suggestion tool, so the review ends up in a single comment.
+    ...(review && { AI_REVIEW: "true" }),
+    ...(review && !review.inline && { AI_REVIEW_INLINE: "false" }),
     DIRECT_PROMPT: aggregatedPrompt,
     GITLAB_WEBHOOK_PAYLOAD: JSON.stringify(minimalPayload),
   };
