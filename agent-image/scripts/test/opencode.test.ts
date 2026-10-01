@@ -4,7 +4,9 @@ import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   mcpServerConfig,
+  OpencodeError,
   parseOpencodeError,
+  parseRejectedPermissions,
   runCli,
   runOpencode,
   setOpenCodeMCPServerConfiguration,
@@ -102,6 +104,35 @@ describe("setOpenCodeMCPServerConfiguration", () => {
   });
 });
 
+describe("parseRejectedPermissions", () => {
+  const cwd = "/builds/g/p/repo";
+
+  it("reports targets relative to the working directory", () => {
+    const log = [
+      "→ Read test/playwright/README.md",
+      "! permission requested: read (builds/g/p/repo/themes/.env); auto-rejecting",
+      "✗ Read themes/.env failed",
+    ];
+    assert.deepEqual(parseRejectedPermissions(log, cwd), [{ tool: "read", target: "themes/.env" }]);
+  });
+
+  it("keeps targets outside the working directory as logged", () => {
+    assert.deepEqual(
+      parseRejectedPermissions(["! permission requested: external_directory (/etc/passwd); auto-rejecting"], cwd),
+      [{ tool: "external_directory", target: "/etc/passwd" }],
+    );
+  });
+
+  it("deduplicates and strips colors", () => {
+    const line = "\x1b[33m! permission requested: read (builds/g/p/repo/.env); auto-rejecting\x1b[0m";
+    assert.deepEqual(parseRejectedPermissions([line, line], cwd), [{ tool: "read", target: ".env" }]);
+  });
+
+  it("returns nothing without rejections", () => {
+    assert.deepEqual(parseRejectedPermissions(["all good"], cwd), []);
+  });
+});
+
 describe("runCli", () => {
   it("feeds stdin and captures stdout and stderr", async () => {
     const res = await runCli("sh", ["-c", "cat; echo err >&2"], "in");
@@ -113,6 +144,13 @@ describe("runCli", () => {
 
   it("reports the exit code", async () => {
     assert.equal((await runCli("sh", ["-c", "exit 3"], "")).code, 3);
+  });
+
+  it("collects watched lines beyond the captured tail, including an unterminated last line", async () => {
+    const script = "echo 'hit 1'; head -c 200000 /dev/zero | tr '\\0' x; echo; printf 'hit 2' >&2";
+    const res = await runCli("sh", ["-c", script], "", /^hit/);
+    assert.deepEqual(res.matches, ["hit 1", "hit 2"]);
+    assert.doesNotMatch(res.output, /hit 1/);
   });
 
   it("rejects when the command doesn't exist", async () => {
@@ -173,6 +211,21 @@ describe("runOpencode", () => {
     await runOpencode(ctx(), "x");
     const config = JSON.parse(readFileSync(join(dir, ".config", "opencode", "opencode.json"), "utf8"));
     assert.equal(config.mcp["gitlab-mcp-server"].environment.CI_PROJECT_ID, "42");
+  });
+
+  it("returns the auto-rejected permissions", async () => {
+    process.env.FAKE_OUTPUT = `! permission requested: read (${process.cwd().slice(1)}/.env); auto-rejecting`;
+    assert.deepEqual(await runOpencode(ctx(), "x"), [{ tool: "read", target: ".env" }]);
+  });
+
+  it("attaches the auto-rejected permissions to a failure", async () => {
+    process.env.FAKE_EXIT = "1";
+    process.env.FAKE_OUTPUT = "! permission requested: read (/x/.env); auto-rejecting";
+    await assert.rejects(runOpencode(ctx(), "x"), (error: unknown) => {
+      assert.ok(error instanceof OpencodeError);
+      assert.deepEqual(error.rejectedPermissions, [{ tool: "read", target: "/x/.env" }]);
+      return true;
+    });
   });
 
   it("fails with opencode's own error message", async () => {

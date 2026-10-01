@@ -11,7 +11,27 @@ export interface McpServerConfig {
   env: Record<string, string | undefined>;
 }
 
-export async function runOpencode(context: Context, prompt: string | undefined): Promise<void> {
+// A permission request opencode auto-rejected because `opencode run` has
+// nobody to ask, e.g. reading a `.env` file.
+export interface RejectedPermission {
+  tool: string;
+  target: string;
+}
+
+// Carries the rejected permissions along, since they may explain the failure.
+export class OpencodeError extends Error {
+  readonly rejectedPermissions: RejectedPermission[];
+
+  constructor(message: string, rejectedPermissions: RejectedPermission[]) {
+    super(message);
+    this.rejectedPermissions = rejectedPermissions;
+  }
+}
+
+const REJECTED_PERMISSION = /permission requested: (\S+) \((.*)\); auto-rejecting/;
+
+// Returns the permissions opencode auto-rejected during the run.
+export async function runOpencode(context: Context, prompt: string | undefined): Promise<RejectedPermission[]> {
   logger.start("Running opencode via cli...");
 
   setOpenCodeMCPServerConfiguration(mcpServerConfig(context));
@@ -31,15 +51,47 @@ export async function runOpencode(context: Context, prompt: string | undefined):
 
   logger.info(`Running: opencode ${cliArgs.join(" ")}`);
 
-  const { code, signal, output } = await runCli("opencode", cliArgs, `${context.agentPrompt}\n${prompt}`);
+  const { code, signal, output, matches } = await runCli(
+    "opencode",
+    cliArgs,
+    `${context.agentPrompt}\n${prompt}`,
+    REJECTED_PERMISSION,
+  );
+  const rejected = parseRejectedPermissions(matches);
+  if (rejected.length > 0) {
+    logger.warn(`opencode auto-rejected ${rejected.length} permission request(s)`);
+  }
 
   if (code !== 0) {
     const reason = parseOpencodeError(output) || (signal ? `killed by ${signal}` : `exit code ${code}`);
     logger.error(`opencode CLI failed: ${reason}`);
-    throw new Error(`opencode CLI failed: ${reason}`);
+    throw new OpencodeError(`opencode CLI failed: ${reason}`, rejected);
   }
 
   logger.success("opencode CLI completed");
+  return rejected;
+}
+
+// Deduplicated tool/target pairs from opencode's
+//   ! permission requested: read (builds/g/p/repo/.env); auto-rejecting
+// lines, with targets relative to the working directory where possible
+// (opencode logs absolute paths without their leading slash).
+export function parseRejectedPermissions(lines: string[], cwd = process.cwd()): RejectedPermission[] {
+  const root = `${cwd.replace(/^\/+|\/+$/g, "")}/`;
+  const seen = new Map<string, RejectedPermission>();
+  for (const line of lines) {
+    const match = stripAnsi(line).match(REJECTED_PERMISSION);
+    if (!match) continue;
+    const [, tool, raw] = match;
+    const path = raw.replace(/^\/+/, "");
+    const target = root !== "/" && path.startsWith(root) ? path.slice(root.length) : raw;
+    seen.set(`${tool}\0${target}`, { tool, target });
+  }
+  return [...seen.values()];
+}
+
+function stripAnsi(text: string): string {
+  return text.replace(/\x1b\[[0-9;]*m/g, "");
 }
 
 // Only the tail is kept for error parsing; the job log still gets everything.
@@ -49,22 +101,39 @@ export interface CliResult {
   code: number | null;
   signal: NodeJS.Signals | null;
   output: string;
+  // Every output line matching `watch`, however early it was printed.
+  matches: string[];
 }
 
 // Runs the CLI with stdout/stderr passed through to the job log and also
 // captured, so a failure can be reported with opencode's own error message.
-export function runCli(command: string, args: string[], input: string): Promise<CliResult> {
+export function runCli(command: string, args: string[], input: string, watch?: RegExp): Promise<CliResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { stdio: ["pipe", "pipe", "pipe"] });
     let output = "";
-    const capture = (target: NodeJS.WritableStream) => (chunk: Buffer) => {
-      target.write(chunk);
-      output = (output + chunk.toString()).slice(-MAX_CAPTURED_OUTPUT);
+    const matches: string[] = [];
+    const flushers: Array<() => void> = [];
+    const capture = (target: NodeJS.WritableStream) => {
+      // Per stream, so interleaved stdout/stderr chunks don't splice lines.
+      let partial = "";
+      const scan = (lines: string[]) => watch && matches.push(...lines.filter((l) => watch.test(l)));
+      flushers.push(() => scan([partial]));
+      return (chunk: Buffer) => {
+        target.write(chunk);
+        const text = chunk.toString();
+        output = (output + text).slice(-MAX_CAPTURED_OUTPUT);
+        const lines = (partial + text).split("\n");
+        partial = lines.pop() ?? "";
+        scan(lines);
+      };
     };
     child.stdout.on("data", capture(process.stdout));
     child.stderr.on("data", capture(process.stderr));
     child.on("error", reject);
-    child.on("close", (code, signal) => resolve({ code, signal, output }));
+    child.on("close", (code, signal) => {
+      flushers.forEach((flush) => flush());
+      resolve({ code, signal, output, matches });
+    });
     // A CLI that exits before reading the prompt makes this write fail with
     // EPIPE; its exit code (via "close") is what gets reported then.
     child.stdin.on("error", () => {});
@@ -77,7 +146,7 @@ export function runCli(command: string, args: string[], input: string): Promise<
 // becomes "Forbidden: Authentication failed: ...". Falls back to the error of
 // the last `level=ERROR` log line. Returns "" when nothing matches.
 export function parseOpencodeError(output: string): string {
-  const lines = output.replace(/\x1b\[[0-9;]*m/g, "").split("\n").map((l) => l.trim());
+  const lines = stripAnsi(output).split("\n").map((l) => l.trim());
 
   const errorLine = lines.filter((l) => l.startsWith("Error: ")).pop();
   if (errorLine) {

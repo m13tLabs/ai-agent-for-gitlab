@@ -3,7 +3,7 @@ import { buildContext } from "./context.ts";
 import { postComment } from "./gitlab.ts";
 import { isInsideGitRepo, setupLocalRepository, ensureBranch, gitSetup } from "./git.ts";
 import { validateProviderKeys, validateConfig } from "./config.ts";
-import { runOpencode } from "./opencode.ts";
+import { OpencodeError, runOpencode, type RejectedPermission } from "./opencode.ts";
 import { writeOutput } from "./output.ts";
 import type { Context, Env } from "./types.ts";
 
@@ -39,7 +39,10 @@ export async function run(): Promise<void> {
 
     logger.info(`Working directory: ${process.cwd()}`); // Should be /opt/agent/repo
 
-    await runOpencode(context, context.prompt);
+    const rejected = await runOpencode(context, context.prompt);
+    if (rejected.length > 0) {
+      await postComment(context, permissionComment(rejected));
+    }
 
     logger.info(`Working directory after opencode: ${process.cwd()}`);
 
@@ -56,13 +59,28 @@ export async function run(): Promise<void> {
 
 async function handleError(context: Context, error: Error): Promise<never> {
   logger.error(error.message);
-  await postComment(context, errorComment(error.message));
+  const rejected = error instanceof OpencodeError ? error.rejectedPermissions : [];
+  const comment = errorComment(error.message);
+  await postComment(context, rejected.length > 0 ? `${comment}\n\n${permissionComment(rejected)}` : comment);
   writeOutput(false, { error: error.message });
   process.exit(1);
 }
 
 export function errorComment(message: string, env: Env = process.env): string {
   return `❌ AI encountered an error:\n\n` + `\`\`\`\n${message}\n\`\`\`\n\n` + failedJobLink(env);
+}
+
+// opencode runs headless in CI, so every permission it would ask about is
+// rejected; tell the commenter why the result may be incomplete.
+export function permissionComment(rejected: RejectedPermission[]): string {
+  const list = rejected.map((p) => `- \`${p.tool}\` on \`${p.target}\``).join("\n");
+  return (
+    `⚠️ The AI was denied access it asked for, so its result may be incomplete:\n\n${list}\n\n` +
+    "The agent runs non-interactively, so any access opencode would ask about is rejected. " +
+    "Secret files such as `.env` are blocked on purpose to keep them out of the model. " +
+    "To allow other access, add a [`permission` rule](https://opencode.ai/docs/permissions/) " +
+    "to the project's `opencode.json`."
+  );
 }
 
 // Link to this job's log (GitLab's predefined CI variables). In runner mode it

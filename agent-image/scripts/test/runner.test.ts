@@ -2,7 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { errorComment, failedJobLink } from "../src/runner.ts";
+import { errorComment, failedJobLink, permissionComment } from "../src/runner.ts";
 import { outputFile, writeOutput } from "../src/output.ts";
 import { tempDir } from "./helpers.ts";
 
@@ -36,6 +36,18 @@ describe("errorComment", () => {
       errorComment("boom", { CI_JOB_URL: "https://gl/j/1" }),
       "❌ AI encountered an error:\n\n```\nboom\n```\n\nSee the [failed job](https://gl/j/1) for details.",
     );
+  });
+});
+
+describe("permissionComment", () => {
+  it("lists each rejected permission and hints at the opencode config", () => {
+    const comment = permissionComment([
+      { tool: "read", target: "themes/.env" },
+      { tool: "external_directory", target: "/etc" },
+    ]);
+    assert.match(comment, /^⚠️ The AI was denied access/);
+    assert.match(comment, /^- `read` on `themes\/\.env`\n- `external_directory` on `\/etc`$/m);
+    assert.match(comment, /opencode\.ai\/docs\/permissions/);
   });
 });
 
