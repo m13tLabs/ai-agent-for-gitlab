@@ -492,11 +492,25 @@ export async function postErrorNote(params: {
   discussionId?: string;
   error: unknown;
 }): Promise<void> {
-  const { projectId, mrIid, issueIid, discussionId } = params;
+  const reason = (params.error instanceof Error ? params.error.message : String(params.error)).slice(0, 1000);
+  await postNote({
+    ...params,
+    body: `:warning: The AI agent could not be started:\n\n\`\`\`\n${reason}\n\`\`\``,
+  });
+}
+
+// Replies in the thread when discussionId is set, otherwise posts a note on
+// the MR/issue. Non-critical: failures are only logged.
+export async function postNote(params: {
+  projectId: number;
+  mrIid?: number;
+  issueIid?: number;
+  discussionId?: string;
+  body: string;
+}): Promise<void> {
+  const { projectId, mrIid, issueIid, discussionId, body } = params;
   if (!mrIid && !issueIid) return;
 
-  const reason = (params.error instanceof Error ? params.error.message : String(params.error)).slice(0, 1000);
-  const body = `:warning: The AI agent could not be started:\n\n\`\`\`\n${reason}\n\`\`\``;
   const resource = mrIid ? `merge_requests/${mrIid}` : `issues/${issueIid}`;
   const path = discussionId
     ? `/api/v4/projects/${projectId}/${resource}/discussions/${discussionId}/notes`
@@ -514,7 +528,7 @@ export async function postErrorNote(params: {
     });
 
     if (!res.ok) {
-      logger.warn("Failed to post error note", {
+      logger.warn("Failed to post note", {
         projectId,
         mrIid,
         issueIid,
@@ -524,9 +538,9 @@ export async function postErrorNote(params: {
       });
       return;
     }
-    logger.info("Error note posted", { projectId, mrIid, issueIid, discussionId });
+    logger.info("Note posted", { projectId, mrIid, issueIid, discussionId });
   } catch (error) {
-    logger.warn("Error posting error note", {
+    logger.warn("Error posting note", {
       error: error instanceof Error ? error.message : error,
       projectId,
       mrIid,

@@ -23,8 +23,14 @@ describe("configFromEnv", () => {
         resourceId: "7",
         resourceType: "merge_request",
         discussionId: "d1",
+        inlineSuggestions: true,
       },
     );
+  });
+
+  it("turns inline suggestions off only for AI_REVIEW_INLINE=false", () => {
+    assert.equal(configFromEnv({ AI_REVIEW_INLINE: "false" }).inlineSuggestions, false);
+    assert.equal(configFromEnv({ AI_REVIEW_INLINE: "" }).inlineSuggestions, true);
   });
 
   it("defaults to an issue on gitlab.com without a discussion", () => {
@@ -73,6 +79,20 @@ describe("GitLabMCPServer", () => {
       tools.map((t) => t.name),
       ["create_gitlab_comment", "create_gitlab_code_suggestion", "get_current_gitlab_resource"],
     );
+  });
+
+  it("hides the code suggestion tool without inline suggestions", async () => {
+    const client = await connect({ inlineSuggestions: false });
+    const { tools } = await client.listTools();
+    assert.deepEqual(
+      tools.map((t) => t.name),
+      ["create_gitlab_comment", "get_current_gitlab_resource"],
+    );
+    await assert.rejects(
+      client.callTool({ name: "create_gitlab_code_suggestion", arguments: { file_path: "a", start_line: 1, suggestion: "x" } }),
+      /Unknown tool: create_gitlab_code_suggestion/,
+    );
+    assert.equal(gitlab.requests.length, 0);
   });
 
   describe("create_gitlab_comment", () => {

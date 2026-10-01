@@ -336,3 +336,53 @@ central_run() {
   assert_output_contains "OK"
   assert_output_contains "POST /api/v4/projects/32/repository/commits"
 }
+
+# templates_run [-e VAR=value ...] -> setup with comment templates on (as the chart sets it)
+templates_run() {
+  setup_run -e COMMENT_TEMPLATES_ENABLED=true -e TRIGGER_PHRASE=@review-agent "$@"
+}
+
+@test "comment templates on Premium: one per command on each top-level group" {
+  run templates_run -e MOCK_EDITION=premium
+  [ "$status" -eq 0 ]
+  assert_output_contains "OK"
+  [ "$(grep -c 'GroupSavedReplyCreateInput' <<<"$output")" -eq 16 ]
+  assert_output_contains '"groupId":"gid://gitlab/Group/1","name":"AI agent: review security","content":"@review-agent /review security"'
+  assert_output_contains '"groupId":"gid://gitlab/Group/3","name":"AI agent: review as single comment","content":"@review-agent /review #inline_comment=False"'
+  assert_output_contains '"name":"AI agent: help","content":"@review-agent /help"'
+  # team-a/sub inherits team-a's templates; gone is marked for deletion.
+  assert_output_lacks "gid://gitlab/Group/2\""
+  assert_output_lacks "gid://gitlab/Group/4\""
+}
+
+@test "comment templates: outdated ones updated, obsolete ones removed, others left alone" {
+  run templates_run -e MOCK_EDITION=premium -e MOCK_TEMPLATES=existing
+  [ "$status" -eq 0 ]
+  assert_output_contains "OK"
+  # team-a: 8 wanted, 2 exist by name -> 6 created; team-b: 8 created
+  [ "$(grep -c 'GroupSavedReplyCreateInput' <<<"$output")" -eq 14 ]
+  assert_output_lacks '"groupId":"gid://gitlab/Group/1","name":"AI agent: review","content"'
+  assert_output_contains '"id":"gid://gitlab/Groups::SavedReply/2","name":"AI agent: review security","content":"@review-agent /review security"'
+  assert_output_contains 'GroupSavedReplyDestroyInput'
+  assert_output_contains '"id":"gid://gitlab/Groups::SavedReply/3"'
+  assert_output_lacks "gid://gitlab/Groups::SavedReply/4"
+}
+
+@test "comment templates without Premium (EE unlicensed, CE) or when off: nothing written" {
+  for args in "-e MOCK_EDITION=ee" "-e MOCK_EDITION=ce" "-e MOCK_EDITION=premium -e COMMENT_TEMPLATES_ENABLED=false"; do
+    # shellcheck disable=SC2086
+    run templates_run $args
+    [ "$status" -eq 0 ]
+    assert_output_contains "OK"
+    assert_output_lacks "SavedReply"
+  done
+}
+
+@test "comment templates: GitLab errors only warn, the setup still succeeds" {
+  run templates_run -e MOCK_EDITION=premium -e MOCK_TEMPLATES_FAIL=1
+  [ "$status" -eq 0 ]
+  assert_output_contains "OK"
+  # Both groups were tried despite the first failure
+  assert_output_contains "gid://gitlab/Group/1"
+  assert_output_contains "gid://gitlab/Group/3"
+}
