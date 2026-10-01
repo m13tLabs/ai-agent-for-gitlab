@@ -328,6 +328,12 @@ containers:
       {{- end }}
       {{- end }}
       {{- end }}
+      {{- if $setup.commentTemplates.enabled }}
+      - name: COMMENT_TEMPLATES_ENABLED
+        value: "true"
+      - name: TRIGGER_PHRASE
+        value: {{ include "ai-agent.triggerPhrase" . | quote }}
+      {{- end }}
       - name: CONFIG_CHECKSUM
         value: {{ include "ai-agent.setupConfigChecksum" . | quote }}
       # Lets fetch() trust the in-cluster API server certificate.

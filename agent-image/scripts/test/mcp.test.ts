@@ -88,7 +88,7 @@ describe("GitLabMCPServer", () => {
     const { tools } = await client.listTools();
     assert.deepEqual(
       tools.map((t) => t.name),
-      ["create_gitlab_comment", "get_current_gitlab_resource"],
+      ["create_gitlab_comment", "list_gitlab_discussions", "get_current_gitlab_resource"],
     );
     await assert.rejects(
       client.callTool({ name: "create_gitlab_code_suggestion", arguments: { file_path: "a", start_line: 1, suggestion: "x" } }),
