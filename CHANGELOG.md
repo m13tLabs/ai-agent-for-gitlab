@@ -1,4 +1,21 @@
 
+## [0.9.1](https://github.com/m13tLabs/ai-agent-for-gitlab/compare/v0.9.0...v0.9.1) (2026-10-01)
+
+### Bug Fixes
+
+* **OpenCode:** Improve error handling on permission reject ([f975d15](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/f975d152fc61b0bec2454827ebcf247b8851bf90))
+
+
+
+### Dependency Updates
+
+* **deps:** Update dependency redis to v6.3.0 ([5f2dcee](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/5f2dcee49e48163d3d3a8f93c6a665cfe9f9c5ed))
+
+* **deps:** Update dependency hono to v4.13.12 ([c9ead77](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/c9ead7725cc12c392bc7f444c61d8a8522b8af74))
+
+
+
+
 ## [0.9.0](https://github.com/m13tLabs/ai-agent-for-gitlab/compare/v0.8.0...v0.9.0) (2026-09-30)
 
 ### Documentation
