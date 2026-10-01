@@ -65,6 +65,7 @@ The webhook app then starts the agent in two ways:
 | Trigger | Webhook event | What happens |
 | --- | --- | --- |
 | `@ai <prompt>` in an MR/issue comment | Comments | Agent runs the prompt and replies in the same thread |
+| `@ai /review [aspect]` in an MR comment | Comments | Agent reviews the MR, optionally focused on one aspect, see [Review commands](#review-commands) |
 | `review-agent` added as **reviewer** of an MR | Merge request events | Agent reviews the MR and posts a review comment |
 | `review-agent` added as **assignee** of an MR | Merge request events | Same as reviewer (disable with `REVIEW_ON_ASSIGNEE=false`) |
 
@@ -75,6 +76,35 @@ Details:
 - The pipeline gets `AI_REVIEW=true`, so you can branch on it in `.gitlab-ci.yml` (e.g. a different `CUSTOM_AGENT_PROMPT`).
 - Concrete fixes are posted as native GitLab code suggestions on the changed lines ("Suggested change" with *Apply suggestion*), plus one summary comment linking them. Lines outside the MR diff get a regular comment with a link to the lines instead, since GitLab can only anchor suggestions on diff lines. This works for `@ai` requests on MRs too.
 - The review instructions come from `REVIEW_PROMPT` (a sensible default is built in), combined with `OPENCODE_AGENT_PROMPT` and `CUSTOM_AGENT_PROMPT` as usual.
+
+#### Review commands
+
+Slash commands after the trigger phrase, modeled on GitLab quick actions:
+
+| Command | What it does |
+| --- | --- |
+| `@ai /review` | General review: correctness, security, tests, maintainability (same as a reviewer assignment) |
+| `@ai /review security` | Security vulnerabilities and secure coding practices |
+| `@ai /review performance` | Slow or resource-heavy code |
+| `@ai /review scalability` | How the code copes with growing usage and data |
+| `@ai /review codeorg` | Readability, maintainability and code organization |
+| `@ai /review codeoptimize` | Opportunities to make the code more efficient |
+| `@ai /help` | Replies with this list (no pipeline) |
+
+- Aspects can be combined: `@ai /review security performance`.
+- Reviews post code suggestions inline on the diff by default. `@ai /review #inline_comment=False` puts the whole review into a single comment instead; the agent then doesn't get the code suggestion tool at all.
+- Lines after the command line are passed on as extra instructions:
+
+  ```text
+  @ai /review security
+  Pay special attention to the new OAuth callback.
+  ```
+
+- The command must follow the trigger phrase directly (`@ai please /review` is a regular prompt). An unknown command, aspect or option gets a reply with the list above; `/review` on an issue gets a reply that it works on merge requests only.
+- The pipeline gets `AI_REVIEW=true` like an assignment review, plus `AI_REVIEW_INLINE=false` with `#inline_comment=False`.
+
+> [!NOTE]
+> GitLab's `/` autocomplete only lists GitLab's own quick actions, so it can't offer these commands. The bot user does show up in `@` autocomplete when it's a project member. To insert a command with a click, save it as a [comment template](https://docs.gitlab.com/user/profile/comment_templates/) (per user on every tier, per group or project on Premium/Ultimate) and pick it from the editor toolbar.
 
 ### GitLab Pipeline
 
@@ -406,7 +436,7 @@ See [`values.yaml`](./charts/ai-agent-for-gitlab/values.yaml) for all options.
 - `AI_AGENT_IMAGE`: Optional agent image forwarded to every triggered pipeline (overrides the value in `.gitlab-ci.yml`)
 - `REVIEW_ON_ASSIGNMENT`: Review MRs when `AI_GITLAB_USERNAME` is added as reviewer (default: true, needs the *Merge request events* webhook trigger)
 - `REVIEW_ON_ASSIGNEE`: Also review when the AI user is added as assignee (default: true)
-- `REVIEW_PROMPT`: Custom instructions for assignment-triggered reviews (default: built-in review prompt)
+- `REVIEW_PROMPT`: Custom base instructions for reviews, assignment-triggered and `/review` (default: built-in review prompt). The aspect focus and the inline/single-comment instruction are appended to it.
 - `START_REACTION_EMOJI`: Emoji awarded when a run starts (default: `robot`)
   
 - `RATE_LIMITING_ENABLED`: Enable/disable rate limiting (default: true). If set to `false`, Redis is not used and not required.
@@ -420,7 +450,8 @@ When a pipeline is triggered, these variables are available:
 
 - `AI_AGENT_IMAGE`: The Docker image for the AI agent
 - `CUSTOM_AGENT_PROMPT`: Repository-specific additions to the agent prompt. If set, it is appended to the base prompt defined in the webhook app.
-- `AI_REVIEW`: Set to `true` when the run was triggered by a reviewer/assignee assignment instead of a comment.
+- `AI_REVIEW`: Set to `true` when the run is a review (reviewer/assignee assignment or `@ai /review`).
+- `AI_REVIEW_INLINE`: `false` for `@ai /review #inline_comment=False`, unset otherwise.
 
 ### GitLab CI/CD Variables (Keys)
 
