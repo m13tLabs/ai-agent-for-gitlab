@@ -215,6 +215,8 @@ export function mcpServerConfig(context: Context): McpServerConfig {
       CI_PROJECT_ID: context.projectId,
       AI_RESOURCE_ID: context.resourceId,
       AI_RESOURCE_TYPE: context.resourceType,
+      AI_DISCUSSION_ID: context.discussionId,
+      AI_GITLAB_USERNAME: context.username,
     },
   };
 }

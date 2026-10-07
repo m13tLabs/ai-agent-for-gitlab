@@ -60,17 +60,19 @@ Create a dedicated GitLab user (or service account / project/group bot), e.g. `r
 > [!NOTE]
 > GitLab reserves usernames starting with `ai-`, `ai_`, `duo-` and `duo_`, so pick a name like `review-agent`.
 
-The webhook app then starts the agent in two ways:
+The webhook app then starts the agent in these ways:
 
 | Trigger | Webhook event | What happens |
 | --- | --- | --- |
 | `@ai <prompt>` in an MR/issue comment | Comments | Agent runs the prompt and replies in the same thread |
+| `@ai review [instructions]` in an MR comment | Comments | Agent reviews the MR like on a reviewer request, with optional extra instructions |
 | `review-agent` added as **reviewer** of an MR | Merge request events | Agent reviews the MR and posts a review comment |
 | `review-agent` added as **assignee** of an MR | Merge request events | Same as reviewer (disable with `REVIEW_ON_ASSIGNEE=false`) |
 
 Details:
 
-- A review is only triggered when the AI user is **newly** added (on MR open/reopen or when reviewers/assignees change), so later pushes or title edits do not re-trigger it. Remove and re-add the reviewer to request another review.
+- A review is only triggered when the AI user is **newly** added (on MR open/reopen or when reviewers/assignees change), so later pushes or title edits do not re-trigger it. To request another review, comment `@ai review` (or remove and re-add the reviewer). After each review the agent posts a short comment saying so.
+- Every run first loads the agent's own earlier comments on the MR/issue (all discussions, with resolve status and replies) and tells the model not to post those findings again: resolved ones count as fixed or dismissed, unresolved ones only get a reply in their thread if there is something new. The model can read all discussions in full with the `list_gitlab_discussions` MCP tool. This needs `AI_GITLAB_USERNAME`.
 - Only open MRs are reviewed; the bot ignores assignments it made itself; the rate limit applies per user/project/MR.
 - The pipeline gets `AI_REVIEW=true`, so you can branch on it in `.gitlab-ci.yml` (e.g. a different `CUSTOM_AGENT_PROMPT`).
 - Concrete fixes are posted as native GitLab code suggestions on the changed lines ("Suggested change" with *Apply suggestion*), plus one summary comment linking them. Lines outside the MR diff get a regular comment with a link to the lines instead, since GitLab can only anchor suggestions on diff lines. This works for `@ai` requests on MRs too.
@@ -420,7 +422,7 @@ When a pipeline is triggered, these variables are available:
 
 - `AI_AGENT_IMAGE`: The Docker image for the AI agent
 - `CUSTOM_AGENT_PROMPT`: Repository-specific additions to the agent prompt. If set, it is appended to the base prompt defined in the webhook app.
-- `AI_REVIEW`: Set to `true` when the run was triggered by a reviewer/assignee assignment instead of a comment.
+- `AI_REVIEW`: Set to `true` when the run is a review: a reviewer/assignee assignment or an `@ai review` comment.
 
 ### GitLab CI/CD Variables (Keys)
 

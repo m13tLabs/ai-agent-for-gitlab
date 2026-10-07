@@ -1,10 +1,17 @@
-import { describe, it } from "node:test";
+import { after, before, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { errorComment, failedJobLink, permissionComment } from "../src/runner.ts";
+import {
+  errorComment,
+  failedJobLink,
+  permissionComment,
+  previousFindings,
+  reviewRetriggerComment,
+} from "../src/runner.ts";
+import { buildContext } from "../src/context.ts";
 import { outputFile, writeOutput } from "../src/output.ts";
-import { tempDir } from "./helpers.ts";
+import { silenceConsole, startGitLabMock, tempDir, UNREACHABLE_URL, type GitLabMock } from "./helpers.ts";
 
 describe("failedJobLink", () => {
   it("links job and pipeline", () => {
@@ -69,5 +76,65 @@ describe("writeOutput", () => {
     assert.deepEqual(rest, { success: false, error: "boom" });
     assert.equal(timestamp, returned.timestamp);
     assert.ok(!Number.isNaN(Date.parse(timestamp)));
+  });
+});
+
+describe("reviewRetriggerComment", () => {
+  it("names the trigger phrase", () => {
+    const comment = reviewRetriggerComment("@review-agent");
+    assert.match(comment, /^🔁 To review this merge request again/);
+    assert.match(comment, /comment `@review-agent review`/);
+    assert.match(comment, /`@review-agent review focus on error handling`/);
+  });
+});
+
+describe("previousFindings", () => {
+  let gitlab: GitLabMock;
+
+  before(async () => {
+    gitlab = await startGitLabMock();
+  });
+  after(() => gitlab.close());
+  beforeEach(() => {
+    silenceConsole();
+    gitlab.requests.length = 0;
+  });
+
+  const context = (env: Record<string, string> = {}) =>
+    buildContext({
+      CI_SERVER_URL: gitlab.url,
+      GITLAB_TOKEN: "t",
+      AI_PROJECT_ID: "42",
+      AI_RESOURCE_TYPE: "merge_request",
+      AI_RESOURCE_ID: "7",
+      AI_GITLAB_USERNAME: "bot",
+      ...env,
+    });
+
+  const own = (id: string, body: string) => ({ id, notes: [{ id: 1, body, author: { username: "bot" } }] });
+
+  it("lists the agent's earlier comments, except the current thread and its own status notes", async () => {
+    gitlab.respond({
+      status: 200,
+      body: [
+        own("d1", "Missing null check"),
+        own("current", "In this thread"),
+        own("d2", reviewRetriggerComment("@ai")),
+        own("d3", errorComment("boom", {})),
+      ],
+    });
+    const section = await previousFindings(context({ AI_DISCUSSION_ID: "current" }));
+    assert.equal(gitlab.requests[0].url, "/api/v4/projects/42/merge_requests/7/discussions?per_page=100&page=1");
+    assert.match(section, /discussion d1\n {4}Missing null check/);
+    assert.doesNotMatch(section, /In this thread|To review this merge request again|encountered an error/);
+  });
+
+  it("is empty without the AI username, without calling GitLab", async () => {
+    assert.equal(await previousFindings(context({ AI_GITLAB_USERNAME: "" })), "");
+    assert.equal(gitlab.requests.length, 0);
+  });
+
+  it("is empty when GitLab can't be reached", async () => {
+    assert.equal(await previousFindings(context({ CI_SERVER_URL: UNREACHABLE_URL })), "");
   });
 });

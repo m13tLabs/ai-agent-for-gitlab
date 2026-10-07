@@ -68,6 +68,8 @@ describe("mcpServerConfig", () => {
       AI_PROJECT_ID: "42",
       AI_RESOURCE_ID: "7",
       AI_RESOURCE_TYPE: "merge_request",
+      AI_DISCUSSION_ID: "d1",
+      AI_GITLAB_USERNAME: "bot",
     });
     const config = mcpServerConfig(ctx);
     assert.equal(config.name, "gitlab-mcp-server");
@@ -80,6 +82,8 @@ describe("mcpServerConfig", () => {
       CI_PROJECT_ID: "42",
       AI_RESOURCE_ID: "7",
       AI_RESOURCE_TYPE: "merge_request",
+      AI_DISCUSSION_ID: "d1",
+      AI_GITLAB_USERNAME: "bot",
     });
   });
 });

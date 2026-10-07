@@ -19,6 +19,7 @@ import {
   type DiffRefs,
   type MergeRequestDiff,
 } from "../src/suggestion.ts";
+import { aiDiscussions, fetchDiscussions, summarizeDiscussions } from "../src/discussions.ts";
 import type { Env } from "../src/types.ts";
 
 // Configuration interface
@@ -29,6 +30,7 @@ export interface GitLabConfig {
   resourceId: string;
   resourceType: "issue" | "merge_request";
   discussionId?: string; // if present for MR, reply in same discussion
+  aiUsername?: string; // the agent's own GitLab user, for list_gitlab_discussions
 }
 
 // Fields the tools read from GitLab's issue / MR payloads.
@@ -63,6 +65,11 @@ const CreateCodeSuggestionSchema = z
   .refine((a) => (a.end_line ?? a.start_line) >= a.start_line, {
     message: "end_line must not be before start_line",
   });
+
+const ListDiscussionsSchema = z.object({
+  only_own: z.boolean().default(false),
+  include_resolved: z.boolean().default(true),
+});
 
 // Upper bound for GET .../diffs pages (100 files each).
 const MAX_DIFF_PAGES = 30;
@@ -148,6 +155,27 @@ export class GitLabMCPServer {
             },
           },
           {
+            name: "list_gitlab_discussions",
+            description:
+              "List the discussions (comment threads) of the current issue or merge request, without system notes: " +
+              "per discussion its ID, resolve status (MR threads), file:line for diff comments and all notes. " +
+              "Use it to check what you and others already said, e.g. findings of earlier reviews, before posting a new one.",
+            inputSchema: {
+              type: "object",
+              properties: {
+                only_own: {
+                  type: "boolean",
+                  description: "Only discussions you (the AI user) started or replied in. Default false.",
+                },
+                include_resolved: {
+                  type: "boolean",
+                  description: "Include resolved discussions. Default true.",
+                },
+              },
+              additionalProperties: false,
+            },
+          },
+          {
             name: "get_current_gitlab_resource",
             description:
               "Get details of the current GitLab issue or merge request",
@@ -171,6 +199,9 @@ export class GitLabMCPServer {
         } else if (name === "create_gitlab_code_suggestion") {
           const parsed = CreateCodeSuggestionSchema.parse(args);
           return await this.createCodeSuggestion(parsed);
+        } else if (name === "list_gitlab_discussions") {
+          const parsed = ListDiscussionsSchema.parse(args ?? {});
+          return await this.listDiscussions(parsed);
         } else if (name === "get_current_gitlab_resource") {
           return await this.getCurrentGitLabResource();
         } else {
@@ -285,6 +316,26 @@ export class GitLabMCPServer {
     }
   }
 
+  private async listDiscussions(args: z.infer<typeof ListDiscussionsSchema>) {
+    try {
+      let summaries = summarizeDiscussions(await fetchDiscussions(this.config, this.config));
+      if (args.only_own) {
+        if (!this.config.aiUsername) {
+          throw new McpError(ErrorCode.InvalidParams, "only_own needs AI_GITLAB_USERNAME, which is not set");
+        }
+        summaries = aiDiscussions(summaries, this.config.aiUsername);
+      }
+      if (!args.include_resolved) summaries = summaries.filter((s) => s.status !== "resolved");
+      return this.textResult(JSON.stringify(summaries, null, 2));
+    } catch (error) {
+      if (error instanceof McpError) throw error;
+      throw new McpError(
+        ErrorCode.InternalError,
+        `Failed to list discussions: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
   private async mergeRequestDiffs(mrPath: string): Promise<MergeRequestDiff[]> {
     const diffs: MergeRequestDiff[] = [];
     for (let page = 1; page <= MAX_DIFF_PAGES; page++) {
@@ -362,6 +413,7 @@ export function configFromEnv(env: Env = process.env): GitLabConfig {
     resourceId: env.AI_RESOURCE_ID || env.CI_ISSUE_IID || "",
     resourceType: env.AI_RESOURCE_TYPE === "merge_request" ? "merge_request" : "issue",
     discussionId: env.AI_DISCUSSION_ID || undefined,
+    aiUsername: env.AI_GITLAB_USERNAME || undefined,
   };
 }
 
