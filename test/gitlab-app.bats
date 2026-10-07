@@ -3,7 +3,7 @@
 # Black-box tests for the gitlab-app image: boots one container and drives the
 # webhook/admin endpoints over HTTP. GITLAB_URL points at a closed port, so
 # only code paths that answer without calling GitLab are covered here — the
-# triggering paths need a GitLab mock (see CLAUDE.md "Verification").
+# triggering paths need a GitLab mock (see .github/CONTRIBUTING.md "Testing").
 
 load test_helper
 
