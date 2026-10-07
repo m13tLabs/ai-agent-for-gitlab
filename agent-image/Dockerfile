@@ -78,7 +78,7 @@ RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
 # opencode CLI (server support, multi-provider models). Pinned here so
 # Renovate's Dockerfile _VERSION manager bumps it.
 # renovate: datasource=npm depName=opencode-ai versioning=npm
-ARG OPENCODE_VERSION=1.18.34
+ARG OPENCODE_VERSION=1.18.35
 RUN npm install -g --no-audit --no-fund "opencode-ai@${OPENCODE_VERSION}" \
  && opencode --version
 
