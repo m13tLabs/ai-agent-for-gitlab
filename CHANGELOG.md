@@ -1,4 +1,35 @@
 
+## [0.10.0](https://github.com/m13tLabs/ai-agent-for-gitlab/compare/v0.9.1...v0.10.0) (2026-10-07)
+
+### Dependency Updates
+
+* **deps:** Update dependency opencode-ai to v1.18.34 ([00a906d](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/00a906db007b2c0bf7ed820fa5ffee345e9bbc97))
+
+* **deps:** Update dependency @types/node to v24.19.1 ([cf7682c](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/cf7682c1b34cedd8ad0be2f44545a523fee6a70a))
+
+* **deps:** Update dependency @modelcontextprotocol/sdk to v1.32.0 ([4bf94f1](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/4bf94f17dcfa01f833f5ef04d61662e0e3d2c015))
+
+* **deps:** Update dependency hono to v4.13.13 ([b709d59](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/b709d59aa52dac01e8a3ed6e5e4310ff033485e5))
+
+* **deps:** Update dependency @modelcontextprotocol/sdk to v1.32.1 ([ec5b525](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/ec5b525ccddf9bd2298e4ac24dec3b487b5e2640))
+
+* **deps:** Update dependency opencode-ai to v1.18.35 ([36c6ed5](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/36c6ed5345fd9395832e9763f5d56348a854665a))
+
+
+
+### Documentation
+
+* **Chart:** Regenerate README for redis 8 image tag ([a1da9f2](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/a1da9f2137b870ec28ba10068bfe47862836f3ec))
+
+
+
+### Features
+
+* **Gitlab:** Use discussion api to cover complete thread history ([076fd22](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/076fd22ca63c1673eb9a8a6af24d167c496a5b23))
+
+
+
+
 ## [0.9.1](https://github.com/m13tLabs/ai-agent-for-gitlab/compare/v0.9.0...v0.9.1) (2026-10-01)
 
 ### Bug Fixes
