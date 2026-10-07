@@ -56,6 +56,48 @@ function commonPipelineVariables(triggerPhrase: string): Record<string, string> 
   return variables;
 }
 
+// Review prompt for a reviewer/assignee request or a "<trigger> review" comment;
+// `extra` is whatever the commenter wrote after "review".
+function reviewPrompt(
+  mr: { iid: number; title: string; source_branch: string; target_branch: string; description?: string },
+  extra = ""
+): string {
+  const instructions = process.env.REVIEW_PROMPT || DEFAULT_REVIEW_PROMPT;
+  const additions = extra ? `\n\n=== Additional Instructions ===\n${extra}` : "";
+  return truncatePrompt(
+    `${instructions}${additions}\n\n=== Merge Request !${mr.iid}: ${mr.title} ===\n` +
+      `Source: ${mr.source_branch} -> Target: ${mr.target_branch}\n\n${
+        mr.description || ""
+      }`.trim()
+  );
+}
+
+type ThreadNote = Awaited<ReturnType<typeof getDiscussionThread>>[number];
+
+// The triggering comment's thread (oldest note first) followed by the user's
+// prompt. Over MAX_PROMPT_CHARS, the oldest notes go first, so the prompt
+// itself survives.
+export function threadPrompt(notes: ThreadNote[], directPrompt: string, max = MAX_PROMPT_CHARS): string {
+  const tail = `\n\n=== User Prompt ===\n${directPrompt}`;
+  const formatted = notes.map((n) => {
+    const author = n.author?.username || n.author?.name || "user";
+    const created = n.created_at ? ` (${n.created_at})` : "";
+    return `@${author}${created}:\n${n.body.trim()}`;
+  });
+
+  const build = (omitted: number) =>
+    "Conversation Thread (oldest first):\n\n" +
+    (omitted > 0 ? `[${omitted} older notes omitted]\n\n---\n\n` : "") +
+    formatted.slice(omitted).join("\n\n---\n\n") +
+    tail;
+
+  let omitted = 0;
+  while (omitted < formatted.length && build(omitted).length > max) omitted++;
+  if (omitted === formatted.length) return truncatePrompt(directPrompt);
+  if (omitted > 0) logger.warn("Discussion thread shortened", { omitted, kept: formatted.length - omitted });
+  return build(omitted).trim();
+}
+
 function truncatePrompt(prompt: string): string {
   if (prompt.length <= MAX_PROMPT_CHARS) return prompt;
   logger.warn("Aggregated prompt truncated", {
@@ -140,13 +182,7 @@ async function handleMergeRequestHook(body: MergeRequestHookPayload) {
   }
 
   const triggerPhrase = process.env.TRIGGER_PHRASE || "@ai";
-  const reviewPrompt = process.env.REVIEW_PROMPT || DEFAULT_REVIEW_PROMPT;
-  const prompt = truncatePrompt(
-    `${reviewPrompt}\n\n=== Merge Request !${mr.iid}: ${mr.title} ===\n` +
-      `Source: ${mr.source_branch} -> Target: ${mr.target_branch}\n\n${
-        mr.description || ""
-      }`.trim()
-  );
+  const prompt = reviewPrompt(mr);
 
   const minimalPayload = {
     object_kind: body.object_kind,
@@ -412,33 +448,30 @@ app.post("/webhook", async (c) => {
   );
 
   const directPrompt = promptMatch ? promptMatch[1].trim() : "";
-  let aggregatedPrompt = directPrompt;
+  let aggregatedPrompt = truncatePrompt(directPrompt);
 
-  // If we have a discussion id, attempt to fetch the whole thread and prepend it
-  if (discussionId) {
+  // "<trigger> review [extra instructions]" on an MR runs a review, like
+  // requesting the AI user as reviewer: top-level note (no discussion ID),
+  // AI_REVIEW=true. The agent itself loads its earlier findings.
+  const reviewMatch = body.merge_request ? directPrompt.match(/^review\b\s*(.*)$/is) : null;
+  const isReview = !!(reviewMatch && body.merge_request);
+  if (reviewMatch && body.merge_request) {
+    aggregatedPrompt = reviewPrompt(body.merge_request, reviewMatch[1].trim());
+    logger.info("Review requested via comment", { projectId, mrIid, requestedBy: authorUsername });
+  } else if (discussionId) {
+    // With a discussion id, prepend the rest of the triggering thread
     try {
-      // Lazy import to avoid circular deps if any
       const threadNotes = await getDiscussionThread({
         projectId: projectId!,
         mrIid: mrIid ?? undefined,
         issueIid: issueIid ?? undefined,
         discussionId,
-        includeSystem: true,
       });
 
       logger.info(`Using ${threadNotes.length} discussion thread notes`);
 
       if (threadNotes.length > 0) {
-        const formatted = threadNotes
-          .map((n) => {
-            const author = n.author?.username || n.author?.name || "user";
-            const created = n.created_at ? ` (${n.created_at})` : "";
-            return `@${author}${created}:\n${n.body.trim()}`;
-          })
-          .join("\n\n---\n\n");
-
-        aggregatedPrompt =
-          `Conversation Thread (most recent first below separator):\n\n${formatted}\n\n=== User Prompt ===\n${directPrompt}`.trim();
+        aggregatedPrompt = threadPrompt(threadNotes, directPrompt);
       }
     } catch (err) {
       logger.warn("Failed to aggregate discussion thread", {
@@ -447,8 +480,6 @@ app.post("/webhook", async (c) => {
       });
     }
   }
-
-  aggregatedPrompt = truncatePrompt(aggregatedPrompt);
 
   // Create minimal webhook payload for CI/CD variable (10KB limit)
   const minimalPayload = {
@@ -485,7 +516,8 @@ app.post("/webhook", async (c) => {
     AI_RESOURCE_ID: String(mrIid || issueIid || ""),
     AI_PROJECT_PATH: projectPath,
     AI_BRANCH: ref,
-    AI_DISCUSSION_ID: discussionId,
+    AI_DISCUSSION_ID: isReview ? "" : discussionId,
+    ...(isReview && { AI_REVIEW: "true" }),
     DIRECT_PROMPT: aggregatedPrompt,
     GITLAB_WEBHOOK_PAYLOAD: JSON.stringify(minimalPayload),
   };

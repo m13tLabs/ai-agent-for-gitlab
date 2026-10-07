@@ -18,6 +18,8 @@ export function buildContext(env: Env = process.env): Context {
     resourceId: env.AI_RESOURCE_ID,
     discussionId: env.AI_DISCUSSION_ID,
     prompt: env.DIRECT_PROMPT,
+    review: env.AI_REVIEW === "true",
+    triggerPhrase: env.TRIGGER_PHRASE || "@ai",
     branch: env.AI_BRANCH,
     email: env.AI_GITLAB_EMAIL,
     username: env.AI_GITLAB_USERNAME,

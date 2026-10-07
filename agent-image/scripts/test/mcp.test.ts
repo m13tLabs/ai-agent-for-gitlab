@@ -15,6 +15,7 @@ describe("configFromEnv", () => {
         AI_RESOURCE_ID: "7",
         AI_RESOURCE_TYPE: "merge_request",
         AI_DISCUSSION_ID: "d1",
+        AI_GITLAB_USERNAME: "bot",
       }),
       {
         serverUrl: "https://gl",
@@ -23,6 +24,7 @@ describe("configFromEnv", () => {
         resourceId: "7",
         resourceType: "merge_request",
         discussionId: "d1",
+        aiUsername: "bot",
       },
     );
   });
@@ -71,7 +73,7 @@ describe("GitLabMCPServer", () => {
     const { tools } = await client.listTools();
     assert.deepEqual(
       tools.map((t) => t.name),
-      ["create_gitlab_comment", "create_gitlab_code_suggestion", "get_current_gitlab_resource"],
+      ["create_gitlab_comment", "create_gitlab_code_suggestion", "list_gitlab_discussions", "get_current_gitlab_resource"],
     );
   });
 
@@ -200,6 +202,45 @@ describe("GitLabMCPServer", () => {
         suggest(client, { file_path: "a", start_line: 3, end_line: 2, suggestion: "x" }),
         /end_line must not be before start_line/,
       );
+    });
+  });
+
+  describe("list_gitlab_discussions", () => {
+    const discussions = [
+      {
+        id: "d1",
+        notes: [
+          { id: 1, body: "Bug here", author: { username: "bot" }, resolvable: true, resolved: true, position: { new_path: "a.ts", new_line: 3 } },
+          { id: 2, body: "changed this line", author: { username: "alice" }, system: true },
+        ],
+      },
+      { id: "d2", individual_note: true, notes: [{ id: 3, body: "LGTM?", author: { username: "alice" } }] },
+    ];
+
+    const list = async (args: Record<string, unknown>, overrides: Partial<GitLabConfig> = {}) => {
+      gitlab.respond({ status: 200, body: discussions });
+      const client = await connect({ aiUsername: "bot", ...overrides });
+      return JSON.parse(text(await client.callTool({ name: "list_gitlab_discussions", arguments: args })));
+    };
+
+    it("returns all discussions without system notes", async () => {
+      assert.deepEqual(await list({}), [
+        { id: "d1", status: "resolved", location: "a.ts:3", notes: [{ author: "bot", body: "Bug here" }] },
+        { id: "d2", notes: [{ author: "alice", body: "LGTM?" }] },
+      ]);
+      assert.equal(gitlab.requests[0].url, "/api/v4/projects/42/merge_requests/7/discussions?per_page=100&page=1");
+    });
+
+    it("filters to the AI user's discussions", async () => {
+      assert.deepEqual((await list({ only_own: true })).map((d: { id: string }) => d.id), ["d1"]);
+    });
+
+    it("leaves out resolved discussions on request", async () => {
+      assert.deepEqual((await list({ include_resolved: false })).map((d: { id: string }) => d.id), ["d2"]);
+    });
+
+    it("needs the AI username for only_own", async () => {
+      await assert.rejects(list({ only_own: true }, { aiUsername: undefined }), /only_own needs AI_GITLAB_USERNAME/);
     });
   });
 

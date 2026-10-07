@@ -7,6 +7,9 @@ export interface Context {
   resourceId?: string;
   discussionId?: string;
   prompt?: string;
+  // Review run (reviewer/assignee request or a "<trigger> review" comment)
+  review: boolean;
+  triggerPhrase: string;
   branch?: string;
   email?: string;
   username?: string;

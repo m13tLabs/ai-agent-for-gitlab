@@ -5,6 +5,7 @@ import { isInsideGitRepo, setupLocalRepository, ensureBranch, gitSetup } from ".
 import { validateProviderKeys, validateConfig } from "./config.ts";
 import { OpencodeError, runOpencode, type RejectedPermission } from "./opencode.ts";
 import { writeOutput } from "./output.ts";
+import { fetchDiscussions, previousFindingsSection, summarizeDiscussions } from "./discussions.ts";
 import type { Context, Env } from "./types.ts";
 
 export async function run(): Promise<void> {
@@ -39,9 +40,15 @@ export async function run(): Promise<void> {
 
     logger.info(`Working directory: ${process.cwd()}`); // Should be /opt/agent/repo
 
-    const rejected = await runOpencode(context, context.prompt);
+    const history = await previousFindings(context);
+    const prompt = history ? `${history}\n\n=== Current Request ===\n${context.prompt ?? ""}` : context.prompt;
+
+    const rejected = await runOpencode(context, prompt);
     if (rejected.length > 0) {
       await postComment(context, permissionComment(rejected));
+    }
+    if (context.review) {
+      await postComment(context, reviewRetriggerComment(context.triggerPhrase));
     }
 
     logger.info(`Working directory after opencode: ${process.cwd()}`);
@@ -64,6 +71,42 @@ async function handleError(context: Context, error: Error): Promise<never> {
   await postComment(context, rejected.length > 0 ? `${comment}\n\n${permissionComment(rejected)}` : comment);
   writeOutput(false, { error: error.message });
   process.exit(1);
+}
+
+// Starts of the notes this runner posts itself; they carry no findings.
+const RUNNER_NOTES = ["🔁 To review this merge request again", "❌ AI encountered an error", "⚠️ The AI was denied access"];
+
+// The AI user's earlier comments on the MR/issue, so a later run doesn't post
+// the same findings again. Non-critical: without it the run just starts fresh.
+// The triggering thread itself is left out, the webhook already puts it into
+// the prompt.
+export async function previousFindings(context: Context): Promise<string> {
+  if (!context.username) {
+    logger.warn("AI_GITLAB_USERNAME not set, cannot tell the agent's earlier comments apart");
+    return "";
+  }
+  try {
+    const summaries = summarizeDiscussions(await fetchDiscussions(context, context)).filter(
+      (s) => s.id !== context.discussionId && !RUNNER_NOTES.some((p) => s.notes[0].body.startsWith(p)),
+    );
+    const isIssue = (context.resourceType || "").toLowerCase() === "issue";
+    const section = previousFindingsSection(summaries, context.username, {
+      resource: isIssue ? "issue" : "merge request",
+    });
+    if (section) logger.info("Passing the agent's previous comments on to opencode");
+    return section;
+  } catch (error) {
+    logger.warn(`Could not load previous discussions: ${(error as Error).message}`);
+    return "";
+  }
+}
+
+export function reviewRetriggerComment(triggerPhrase: string): string {
+  return (
+    `🔁 To review this merge request again, e.g. after pushing fixes, comment \`${triggerPhrase} review\`. ` +
+    `Anything after it is passed on as extra instructions, e.g. \`${triggerPhrase} review focus on error handling\`. ` +
+    "Findings from earlier reviews are taken into account, so only new or still open issues are reported."
+  );
 }
 
 export function errorComment(message: string, env: Env = process.env): string {

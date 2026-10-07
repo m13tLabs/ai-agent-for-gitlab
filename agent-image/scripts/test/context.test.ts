@@ -24,6 +24,8 @@ describe("buildContext", () => {
       CI_SERVER_HOST: "gitlab.example.com",
       CI_SERVER_URL: "https://gitlab.example.com",
       AI_PROJECT_ID: "42",
+      AI_REVIEW: "true",
+      TRIGGER_PHRASE: "@review-agent",
     });
     assert.deepEqual(ctx, {
       projectPath: "g/p",
@@ -32,6 +34,8 @@ describe("buildContext", () => {
       resourceId: "7",
       discussionId: "abc",
       prompt: "@ai fix it",
+      review: true,
+      triggerPhrase: "@review-agent",
       branch: "feature",
       email: "bot@example.com",
       username: "bot",
@@ -49,6 +53,8 @@ describe("buildContext", () => {
     const ctx = buildContext({});
     assert.equal(ctx.host, "gitlab.com");
     assert.equal(ctx.serverUrl, "https://gitlab.com");
+    assert.equal(ctx.review, false);
+    assert.equal(ctx.triggerPhrase, "@ai");
   });
 
   it("prefers AI_PROJECT_ID (target project) over CI_PROJECT_ID (runner project)", () => {
