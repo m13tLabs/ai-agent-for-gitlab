@@ -121,7 +121,7 @@ export function permissionComment(rejected: RejectedPermission[]): string {
     `⚠️ The AI was denied access it asked for, so its result may be incomplete:\n\n${list}\n\n` +
     "The agent runs non-interactively, so any access opencode would ask about is rejected. " +
     "Secret files such as `.env` are blocked on purpose to keep them out of the model. " +
-    "To allow other access, add a [`permission` rule](https://opencode.ai/docs/permissions/) " +
+    "To allow other access, add a [`permissions` rule](https://opencode.ai/v2/docs/permissions) " +
     "to the project's `opencode.json`."
   );
 }

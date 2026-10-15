@@ -1,8 +1,10 @@
 import logger from "./logger.ts";
 import { spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 import { writeFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
+import { setTimeout as sleep } from "node:timers/promises";
 import type { Context } from "./types.ts";
 
 export interface McpServerConfig {
@@ -31,10 +33,16 @@ export class OpencodeError extends Error {
 const REJECTED_PERMISSION = /permission requested: (\S+) \((.*)\); auto-rejecting/;
 
 // Returns the permissions opencode auto-rejected during the run.
+//
+// opencode 2 connects MCP servers in the background and `opencode run` doesn't
+// wait for them, so its first model request can go out without the GitLab
+// tools. Hence a server of our own: wait for the GitLab MCP server, then run
+// the prompt against that server.
 export async function runOpencode(context: Context, prompt: string | undefined): Promise<RejectedPermission[]> {
   logger.start("Running opencode via cli...");
 
-  setOpenCodeMCPServerConfiguration(mcpServerConfig(context));
+  const mcp = mcpServerConfig(context);
+  setOpenCodeMCPServerConfiguration(mcp);
 
   const model = context.opencodeModel ?? "";
   const [providerID, modelID] = model.split("/");
@@ -44,19 +52,26 @@ export async function runOpencode(context: Context, prompt: string | undefined):
 
   logger.info(`Using model: ${modelID} from provider: ${providerID}`);
 
+  const server = await startServer();
+  try {
+    await waitForMcpServer(server, mcp.name);
+    return await runPrompt(server, model, `${context.agentPrompt}\n${prompt}`);
+  } finally {
+    await server.stop();
+  }
+}
+
+async function runPrompt(server: OpencodeServer, model: string, input: string): Promise<RejectedPermission[]> {
   logger.info("Sending prompt to model ... this may take a while");
 
   // Use the "opencode" CLI to send the prompt and get the response
-  const cliArgs = ["run", "--print-logs", "--model", model, "--log-level", "ERROR"];
+  const cliArgs = ["run", "--server", server.url, "--print-logs", "--log-level", "error", "--model", model];
 
   logger.info(`Running: opencode ${cliArgs.join(" ")}`);
 
-  const { code, signal, output, matches } = await runCli(
-    "opencode",
-    cliArgs,
-    `${context.agentPrompt}\n${prompt}`,
-    REJECTED_PERMISSION,
-  );
+  const { code, signal, output, matches } = await runCli("opencode", cliArgs, input, REJECTED_PERMISSION, {
+    OPENCODE_PASSWORD: server.password,
+  });
   const rejected = parseRejectedPermissions(matches);
   if (rejected.length > 0) {
     logger.warn(`opencode auto-rejected ${rejected.length} permission request(s)`);
@@ -72,10 +87,103 @@ export async function runOpencode(context: Context, prompt: string | undefined):
   return rejected;
 }
 
+export interface OpencodeServer {
+  url: string;
+  password: string;
+  stop(): Promise<void>;
+}
+
+const LISTENING = /server listening on (http:\/\/\S+)/;
+
+// `opencode serve` on a free local port, with a one-off password. Its output
+// goes to the job log.
+export function startServer(timeoutMs = 30_000): Promise<OpencodeServer> {
+  logger.info("Starting opencode server...");
+  const password = randomBytes(24).toString("base64url");
+  const args = ["serve", "--hostname", "127.0.0.1", "--port", "0", "--print-logs", "--log-level", "warn"];
+  const child = spawn("opencode", args, {
+    env: { ...process.env, OPENCODE_SERVER_PASSWORD: password },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const closed = new Promise<void>((resolve) => child.on("close", () => resolve()));
+  const stop = async () => {
+    if (child.pid === undefined || child.exitCode !== null || child.signalCode !== null) return;
+    child.kill("SIGTERM");
+    const kill = setTimeout(() => child.kill("SIGKILL"), 5_000);
+    await closed;
+    clearTimeout(kill);
+  };
+
+  return new Promise((resolve, reject) => {
+    const fail = (error: Error) => {
+      clearTimeout(timer);
+      void stop();
+      reject(error);
+    };
+    const timer = setTimeout(
+      () => fail(new Error(`opencode server didn't start within ${timeoutMs / 1000}s`)),
+      timeoutMs,
+    );
+    let stdout = "";
+    child.stdout.on("data", (chunk: Buffer) => {
+      process.stdout.write(chunk);
+      stdout += chunk.toString();
+      const url = stdout.match(LISTENING)?.[1];
+      if (url) {
+        clearTimeout(timer);
+        resolve({ url, password, stop });
+      }
+    });
+    child.stderr.on("data", (chunk: Buffer) => process.stderr.write(chunk));
+    child.on("error", fail);
+    // No-op once resolved.
+    child.on("close", (code, signal) => {
+      const reason = signal ? `killed by ${signal}` : `exit code ${code}`;
+      fail(new Error(`opencode server exited before listening: ${reason}`));
+    });
+  });
+}
+
+interface McpStatus {
+  status: string;
+  error?: string;
+}
+
+// Waits until the server has connected the MCP server `name` for `directory`
+// (the first status request boots that directory's services). Without it the
+// agent couldn't post to GitLab, so anything but "connected" fails the run.
+export async function waitForMcpServer(
+  server: OpencodeServer,
+  name: string,
+  directory = process.cwd(),
+  timeoutMs = 60_000,
+): Promise<void> {
+  logger.info(`Waiting for MCP server ${name}...`);
+  const url = `${server.url}/api/mcp?directory=${encodeURIComponent(directory)}`;
+  const headers = { authorization: `Basic ${Buffer.from(`opencode:${server.password}`).toString("base64")}` };
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const res = await fetch(url, { headers });
+    if (!res.ok) throw new Error(`opencode server answered ${res.status} for the MCP status`);
+    const body = (await res.json()) as { data?: { name: string; status: McpStatus }[] };
+    const status = body.data?.find((s) => s.name === name)?.status;
+    if (status?.status === "connected") {
+      logger.info(`MCP server ${name} connected`);
+      return;
+    }
+    if (status && status.status !== "pending") {
+      throw new Error(`MCP server ${name} didn't start: ${status.error || status.status}`);
+    }
+    if (Date.now() > deadline) throw new Error(`MCP server ${name} didn't connect within ${timeoutMs / 1000}s`);
+    await sleep(100);
+  }
+}
+
 // Deduplicated tool/target pairs from opencode's
-//   ! permission requested: read (builds/g/p/repo/.env); auto-rejecting
+//   ! permission requested: read (themes/.env); auto-rejecting
 // lines, with targets relative to the working directory where possible
-// (opencode logs absolute paths without their leading slash).
+// (opencode 2 logs paths inside it relative, opencode 1 logged absolute
+// paths without their leading slash).
 export function parseRejectedPermissions(lines: string[], cwd = process.cwd()): RejectedPermission[] {
   const root = `${cwd.replace(/^\/+|\/+$/g, "")}/`;
   const seen = new Map<string, RejectedPermission>();
@@ -107,9 +215,15 @@ export interface CliResult {
 
 // Runs the CLI with stdout/stderr passed through to the job log and also
 // captured, so a failure can be reported with opencode's own error message.
-export function runCli(command: string, args: string[], input: string, watch?: RegExp): Promise<CliResult> {
+export function runCli(
+  command: string,
+  args: string[],
+  input: string,
+  watch?: RegExp,
+  env: Record<string, string> = {},
+): Promise<CliResult> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: ["pipe", "pipe", "pipe"] });
+    const child = spawn(command, args, { stdio: ["pipe", "pipe", "pipe"], env: { ...process.env, ...env } });
     let output = "";
     const matches: string[] = [];
     const flushers: Array<() => void> = [];
@@ -183,14 +297,18 @@ export function setOpenCodeMCPServerConfiguration(mcpServerConfig: McpServerConf
   try {
     mkdirSync(configDir, { recursive: true });
 
+    // codemode: false offers the GitLab tools to the model directly, as
+    // opencode 1 did, instead of only through Code Mode's `execute` tool.
     const config = {
       $schema: "https://opencode.ai/config.json",
       mcp: {
-        [mcpServerConfig.name]: {
-          type: "local",
-          command: mcpServerConfig.command,
-          environment: mcpServerConfig.env,
-          enabled: true,
+        servers: {
+          [mcpServerConfig.name]: {
+            type: "local",
+            command: mcpServerConfig.command,
+            environment: mcpServerConfig.env,
+            codemode: false,
+          },
         },
       },
     };

@@ -54,7 +54,7 @@ describe("permissionComment", () => {
     ]);
     assert.match(comment, /^⚠️ The AI was denied access/);
     assert.match(comment, /^- `read` on `themes\/\.env`\n- `external_directory` on `\/etc`$/m);
-    assert.match(comment, /opencode\.ai\/docs\/permissions/);
+    assert.match(comment, /opencode\.ai\/v2\/docs\/permissions/);
   });
 });
 

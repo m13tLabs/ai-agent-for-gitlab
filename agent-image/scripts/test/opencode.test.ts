@@ -1,6 +1,8 @@
-import { before, beforeEach, describe, it } from "node:test";
+import { after, before, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { createServer, type IncomingHttpHeaders, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import {
   mcpServerConfig,
@@ -91,13 +93,15 @@ describe("mcpServerConfig", () => {
 describe("setOpenCodeMCPServerConfiguration", () => {
   beforeEach(silenceConsole);
 
-  it("writes opencode.json with the MCP server entry", () => {
+  it("writes opencode.json with the MCP server entry, its tools offered directly", () => {
     const home = tempDir();
     setOpenCodeMCPServerConfiguration({ name: "srv", command: ["node", "x.ts"], env: { A: "1" } }, home);
     const config = JSON.parse(readFileSync(join(home, ".config", "opencode", "opencode.json"), "utf8"));
     assert.deepEqual(config, {
       $schema: "https://opencode.ai/config.json",
-      mcp: { srv: { type: "local", command: ["node", "x.ts"], environment: { A: "1" }, enabled: true } },
+      mcp: {
+        servers: { srv: { type: "local", command: ["node", "x.ts"], environment: { A: "1" }, codemode: false } },
+      },
     });
   });
 
@@ -110,6 +114,11 @@ describe("setOpenCodeMCPServerConfiguration", () => {
 
 describe("parseRejectedPermissions", () => {
   const cwd = "/builds/g/p/repo";
+
+  it("keeps the relative targets opencode 2 logs", () => {
+    const log = ["! permission requested: read (themes/.env); auto-rejecting", "✗ Read themes/.env failed"];
+    assert.deepEqual(parseRejectedPermissions(log, cwd), [{ tool: "read", target: "themes/.env" }]);
+  });
 
   it("reports targets relative to the working directory", () => {
     const log = [
@@ -162,10 +171,15 @@ describe("runCli", () => {
   });
 });
 
-// Replaces `opencode` on PATH with a script that records its arguments and
-// stdin, prints $FAKE_OUTPUT to stderr and exits with $FAKE_EXIT.
+// Replaces `opencode` on PATH with a script. As `serve` it records its
+// arguments, password and pid and announces the MCP status mock as its URL;
+// as `run` it records its arguments, password and stdin, prints $FAKE_OUTPUT
+// to stderr and exits with $FAKE_EXIT.
 describe("runOpencode", () => {
   let dir: string;
+  let mock: Server;
+  let statuses: object[];
+  let requests: { url: string; headers: IncomingHttpHeaders }[];
   const ctx = () =>
     buildContext({
       OPENCODE_MODEL: "anthropic/claude",
@@ -174,14 +188,39 @@ describe("runOpencode", () => {
       GITLAB_TOKEN: "t",
       AI_PROJECT_ID: "42",
     });
+  const read = (name: string) => readFileSync(join(dir, name), "utf8").trim();
+  const isRunning = (pid: number) => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
 
-  before(() => {
+  before(async () => {
     dir = tempDir();
+    mock = createServer((req, res) => {
+      requests.push({ url: req.url ?? "", headers: req.headers });
+      const status = statuses.length > 1 ? statuses.shift() : statuses[0];
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ data: status ? [{ name: "gitlab-mcp-server", status }] : [] }));
+    });
+    await new Promise<void>((resolve) => mock.listen(0, "127.0.0.1", resolve));
+    const url = `http://127.0.0.1:${(mock.address() as AddressInfo).port}`;
     writeFileSync(
       join(dir, "opencode"),
       [
         "#!/bin/sh",
+        'if [ "$1" = serve ]; then',
+        `  printf '%s\\n' "$@" > "${dir}/serve-args"`,
+        `  echo "$OPENCODE_SERVER_PASSWORD" > "${dir}/serve-password"`,
+        `  echo $$ > "${dir}/serve-pid"`,
+        `  echo "server listening on ${url}"`,
+        "  exec sleep 30",
+        "fi",
         `printf '%s\\n' "$@" > "${dir}/args"`,
+        `echo "$OPENCODE_PASSWORD" > "${dir}/run-password"`,
         `cat > "${dir}/stdin"`,
         `[ -n "$FAKE_OUTPUT" ] && printf '%s\\n' "$FAKE_OUTPUT" >&2`,
         'exit "${FAKE_EXIT:-0}"',
@@ -192,33 +231,72 @@ describe("runOpencode", () => {
     process.env.HOME = dir;
   });
 
+  after(() => mock.close());
+
   beforeEach(() => {
     silenceConsole();
     delete process.env.FAKE_EXIT;
     delete process.env.FAKE_OUTPUT;
+    statuses = [{ status: "pending" }, { status: "connected" }];
+    requests = [];
+    writeFileSync(join(dir, "args"), "");
   });
 
-  it("runs opencode with the model, agent prompt and user prompt", async () => {
+  it("runs the prompt against its own server once the MCP server is connected", async () => {
     await runOpencode(ctx(), "@ai do it");
-    assert.deepEqual(readFileSync(join(dir, "args"), "utf8").trim().split("\n"), [
-      "run",
+    const url = `http://127.0.0.1:${(mock.address() as AddressInfo).port}`;
+    assert.deepEqual(read("serve-args").split("\n"), [
+      "serve",
+      "--hostname",
+      "127.0.0.1",
+      "--port",
+      "0",
       "--print-logs",
+      "--log-level",
+      "warn",
+    ]);
+    assert.deepEqual(read("args").split("\n"), [
+      "run",
+      "--server",
+      url,
+      "--print-logs",
+      "--log-level",
+      "error",
       "--model",
       "anthropic/claude",
-      "--log-level",
-      "ERROR",
     ]);
-    assert.equal(readFileSync(join(dir, "stdin"), "utf8"), "system\n@ai do it");
+    assert.equal(read("stdin"), "system\n@ai do it");
+
+    const password = read("serve-password");
+    assert.ok(password.length >= 32, "a generated password");
+    assert.equal(read("run-password"), password);
+    assert.equal(requests.length, 2, "polled until connected");
+    assert.equal(requests[0].url, `/api/mcp?directory=${encodeURIComponent(process.cwd())}`);
+    assert.equal(requests[0].headers.authorization, `Basic ${Buffer.from(`opencode:${password}`).toString("base64")}`);
+  });
+
+  it("stops its server afterwards", async () => {
+    await runOpencode(ctx(), "x");
+    assert.equal(isRunning(Number(read("serve-pid"))), false);
+  });
+
+  it("fails without running the prompt when the MCP server doesn't start", async () => {
+    statuses = [{ status: "pending" }, { status: "failed", error: "exited with code 1" }];
+    await assert.rejects(runOpencode(ctx(), "x"), {
+      message: "MCP server gitlab-mcp-server didn't start: exited with code 1",
+    });
+    assert.equal(read("args"), "");
+    assert.equal(isRunning(Number(read("serve-pid"))), false);
   });
 
   it("configures the GitLab MCP server first", async () => {
     await runOpencode(ctx(), "x");
     const config = JSON.parse(readFileSync(join(dir, ".config", "opencode", "opencode.json"), "utf8"));
-    assert.equal(config.mcp["gitlab-mcp-server"].environment.CI_PROJECT_ID, "42");
+    assert.equal(config.mcp.servers["gitlab-mcp-server"].environment.CI_PROJECT_ID, "42");
   });
 
   it("returns the auto-rejected permissions", async () => {
-    process.env.FAKE_OUTPUT = `! permission requested: read (${process.cwd().slice(1)}/.env); auto-rejecting`;
+    process.env.FAKE_OUTPUT = "! permission requested: read (.env); auto-rejecting";
     assert.deepEqual(await runOpencode(ctx(), "x"), [{ tool: "read", target: ".env" }]);
   });
 

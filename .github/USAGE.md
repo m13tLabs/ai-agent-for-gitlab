@@ -345,7 +345,7 @@ Keep general behavior in `OPENCODE_AGENT_PROMPT` and only repository specifics i
 ### Custom opencode configuration
 
 The agent's own config (with the GitLab MCP server) is merged with an
-[opencode config](https://opencode.ai/docs/config/) from, in increasing precedence:
+[opencode 2 config](https://opencode.ai/v2/docs/config) from, in increasing precedence:
 
 | Where | How | Scope |
 | --- | --- | --- |
@@ -354,6 +354,8 @@ The agent's own config (with the GitLab MCP server) is merged with an
 | CI/CD or pipeline variable `OPENCODE_CONFIG_CONTENT` | the config itself | wherever it's defined |
 
 `{env:VAR}` is replaced by that environment variable, so secrets can stay in masked variables.
+opencode 2 still reads opencode 1 configs and translates them, except for the `whitelist` /
+`blacklist` of a provider, which it drops. Prefer the opencode 2 keys for new configs.
 
 #### Example: Amazon Bedrock with an application inference profile
 
@@ -374,17 +376,20 @@ gitlabSetup:
           OPENCODE_CONFIG_CONTENT: |
             {
               "$schema": "https://opencode.ai/config.json",
-              "disabled_providers": ["opencode"], // only AWS Bedrock
-              "autoupdate": false,
+              "policies": [
+                // only AWS Bedrock
+                { "action": "provider.use", "resource": "*", "effect": "deny" },
+                { "action": "provider.use", "resource": "amazon-bedrock", "effect": "allow" }
+              ],
+              "update": "disable",
               "model": "{env:OPENCODE_MODEL}",
-              "small_model": "{env:OPENCODE_MODEL}",
-              "provider": {
+              "agents": { "title": { "model": "{env:OPENCODE_MODEL}" } },
+              "providers": {
                 "amazon-bedrock": {
-                  // the bare model ID, without "amazon-bedrock/"
-                  "whitelist": ["anthropic.claude-opus-4-6-v1"],
-                  "options": { "region": "eu-central-1" },
+                  "settings": { "region": "eu-central-1" },
                   "models": {
-                    "anthropic.claude-opus-4-6-v1": { "id": "{env:OPENCODE_MODEL_ID}" }
+                    // the bare model ID, without "amazon-bedrock/"
+                    "anthropic.claude-opus-4-6-v1": { "modelID": "{env:OPENCODE_MODEL_ID}" }
                   }
                 }
               },
@@ -392,13 +397,15 @@ gitlabSetup:
             }
 ```
 
-- `model` / `small_model` take the full `provider/model` from `agent.model`. Set
-  `small_model` too: opencode's default small model can sit in another region and fail with
-  `Forbidden` where only EU inference is allowed.
-- `whitelist` and the `models` key take the **bare** model ID. Using the catalog's own ID keeps
-  opencode's known limits and lets `agent.validateModel` pass; an own alias needs
+- `model` and the `title` agent's `model` take the full `provider/model` from `agent.model`.
+  Set the title model too (opencode 1's `small_model`): opencode's default can sit in another
+  region and fail with `Forbidden` where only EU inference is allowed.
+- The `models` key takes the **bare** model ID. Using the catalog's own ID keeps opencode's
+  known limits and lets `agent.validateModel` pass; an own alias needs
   `agent.validateModel: false`.
-- `"id"` is what opencode sends to Bedrock, here the inference profile ARN.
+- `"modelID"` is what opencode sends to Bedrock, here the inference profile ARN.
+- The [policies](https://opencode.ai/v2/docs/policies) replace opencode 1's
+  `disabled_providers`. opencode 2 has no per-model whitelist; `model` decides what is used.
 - Use `|` for `OPENCODE_CONFIG_CONTENT`. With `>-`, lines can be joined and a `//` comment
   swallows the rest.
 - Credentials: `AWS_BEARER_TOKEN_BEDROCK` (a long-term key; short-term ones expire within 12

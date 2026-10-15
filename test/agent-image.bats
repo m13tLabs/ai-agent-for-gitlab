@@ -29,7 +29,7 @@ in_image() {
   pinned="$(sed -n 's/^ARG OPENCODE_VERSION=//p' "$BATS_TEST_DIRNAME/../agent-image/Dockerfile")"
   [ -n "$pinned" ]
   run --separate-stderr in_image 'opencode --version'
-  assert_output "$pinned"
+  assert_output "opencode v$pinned"
 }
 
 @test "runs the Node.js 24 LTS version pinned in the Dockerfile" {
@@ -103,14 +103,17 @@ fake_node_models_path='
 }
 
 @test "baked-in model catalog resolves models offline" {
-  # eu.anthropic.claude-fable-5 is only in the build-time catalog, not in
-  # opencode 1.18.33's compiled-in snapshot, so this proves the file is read.
+  # A copy of the baked-in catalog with a Bedrock model no compiled-in
+  # snapshot has, so this proves the file is read.
   run --separate-stderr docker run --rm --network none \
     -e AWS_ACCESS_KEY_ID=x -e AWS_SECRET_ACCESS_KEY=x -e AWS_REGION=eu-central-1 \
-    -e OPENCODE_DISABLE_MODELS_FETCH=true -e OPENCODE_MODELS_PATH=/opt/opencode-models.json \
-    "$IMAGE" opencode models amazon-bedrock
+    -e OPENCODE_DISABLE_MODELS_FETCH=true -e OPENCODE_MODELS_PATH=/tmp/models.json \
+    "$IMAGE" sh -c '
+      jq ".\"amazon-bedrock\".models |= . + {\"bats-only\": (to_entries[0].value + {id: \"bats-only\"})}" \
+        /opt/opencode-models.json > /tmp/models.json
+      opencode models --standalone'
   [ "$status" -eq 0 ]
-  assert_output_contains "amazon-bedrock/eu.anthropic.claude-fable-5"
+  assert_output_contains "amazon-bedrock/bats-only"
 }
 
 # The runner's logic is unit tested (agent-image/scripts/test, run by the

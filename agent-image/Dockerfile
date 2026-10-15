@@ -75,11 +75,12 @@ RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
  && ln -s ../lib/node_modules/corepack/dist/corepack.js /usr/local/bin/corepack \
  && node --version && npm --version
 
-# opencode CLI (server support, multi-provider models). Pinned here so
-# Renovate's Dockerfile _VERSION manager bumps it.
-# renovate: datasource=npm depName=opencode-ai versioning=npm
-ARG OPENCODE_VERSION=1.19.0
-RUN npm install -g --no-audit --no-fund "opencode-ai@${OPENCODE_VERSION}" \
+# opencode 2 CLI (server support, multi-provider models). Pinned here so
+# Renovate's Dockerfile _VERSION manager bumps it. Its postinstall picks the
+# native binary for the platform.
+# renovate: datasource=npm depName=@opencode/cli versioning=npm
+ARG OPENCODE_VERSION=2.0.29
+RUN npm install -g --no-audit --no-fund "@opencode/cli@${OPENCODE_VERSION}" \
  && opencode --version
 
 # Model catalog from build time, for air-gapped runners. With

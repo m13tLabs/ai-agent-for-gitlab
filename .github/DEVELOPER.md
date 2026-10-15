@@ -74,7 +74,20 @@ blob permalink. **Not yet verified against a real GitLab.**
 ### Agent image
 
 - opencode starts the MCP server itself (`node mcp.ts`, configured in
-  `~/.config/opencode/opencode.json` by `src/opencode.ts`).
+  `~/.config/opencode/opencode.json` by `src/opencode.ts`, under `mcp.servers` with
+  `codemode: false` so the model gets the GitLab tools directly, not only through Code Mode's
+  `execute` tool).
+- opencode 2 connects MCP servers in the background, and `opencode run --standalone` doesn't
+  wait for them: its first model request went out without the GitLab tools. So
+  `runOpencode` starts `opencode serve` on `127.0.0.1:0` with a one-off
+  `OPENCODE_SERVER_PASSWORD`, polls `GET /api/mcp?directory=<cwd>` (basic auth `opencode`;
+  the first request boots that directory) until `gitlab-mcp-server` is `connected`, then runs
+  `opencode run --server <url>` with `OPENCODE_PASSWORD`. Any other final status fails the job
+  before the prompt is sent. The server's logs go to the job log.
+- In opencode 2 a rejected permission no longer fails `opencode run`: the model is told to go
+  on without it and the run can exit 0. The rejection is still logged as
+  `permission requested: <action> (<path>); auto-rejecting` (paths inside the workspace now
+  relative), plus an `Error:` line; `parseOpencodeError` takes the last `Error:` line.
 - The agent reads `GITLAB_AI_AGENT_TOKEN` before `GITLAB_TOKEN` (`context.ts`), so a leftover
   hand-made `GITLAB_TOKEN` can't shadow the setup-managed one.
 - Node.js is copied from `node:*-bookworm-slim` into `mcr.microsoft.com/dotnet/sdk:8.0`. Keep
