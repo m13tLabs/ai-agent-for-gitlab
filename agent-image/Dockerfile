@@ -79,7 +79,7 @@ RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
 # Renovate's Dockerfile _VERSION manager bumps it. Its postinstall picks the
 # native binary for the platform.
 # renovate: datasource=npm depName=@opencode/cli versioning=npm
-ARG OPENCODE_VERSION=2.0.29
+ARG OPENCODE_VERSION=2.0.30
 RUN npm install -g --no-audit --no-fund "@opencode/cli@${OPENCODE_VERSION}" \
  && opencode --version
 
