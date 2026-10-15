@@ -5,7 +5,7 @@
 # .NET SDK (official Microsoft image, Ubuntu 26.04) + Node.js 24 LTS copied in
 # from the official node image (Debian 12; its glibc is older, so the binary runs as-is).
 # renovate: datasource=docker depName=node versioning=docker
-FROM node:24.21.0-bookworm-slim AS node
+FROM node:24.22.0-bookworm-slim AS node
 
 # ---------------------------------------------------------------------------
 # Typecheck + unit tests
@@ -15,7 +15,7 @@ FROM node:24.21.0-bookworm-slim AS node
 # tests; either failing fails the image build (and with it CI). Runs once on
 # the build platform instead of per target platform under QEMU.
 # renovate: datasource=docker depName=node versioning=docker
-FROM --platform=$BUILDPLATFORM node:24.21.0-bookworm-slim AS test
+FROM --platform=$BUILDPLATFORM node:24.22.0-bookworm-slim AS test
 
 # git for the git.ts tests.
 # hadolint ignore=DL3008

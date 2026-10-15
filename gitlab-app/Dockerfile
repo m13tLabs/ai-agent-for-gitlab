@@ -10,7 +10,7 @@
 # Typecheck
 # ---------------------------------------------------------------------------
 # renovate: datasource=docker depName=node versioning=docker
-FROM node:24.21.0-alpine AS typecheck
+FROM node:24.22.0-alpine AS typecheck
 
 WORKDIR /app
 COPY package.json package-lock.json ./
@@ -22,7 +22,7 @@ RUN npm run typecheck
 # ---------------------------------------------------------------------------
 # Runtime
 # ---------------------------------------------------------------------------
-FROM node:24.21.0-alpine
+FROM node:24.22.0-alpine
 
 ARG BUILD_DATE
 ARG APP_VERSION
