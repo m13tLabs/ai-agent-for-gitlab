@@ -93,9 +93,9 @@ mr_update() { # mr_update <author> <previous reviewers json> <current reviewers 
   assert_output "1001"
 }
 
-@test "runs the Node.js 24 LTS version pinned in the Dockerfile" {
+@test "runs the Node.js 26 LTS version pinned in the Dockerfile" {
   pinned="$(sed -n 's/^FROM node:\([0-9.]*\)-.*/\1/p' "$BATS_TEST_DIRNAME/../gitlab-app/Dockerfile" | sort -u)"
-  [[ "$pinned" == 24.* ]]
+  [[ "$pinned" == 26.* ]]
   run docker exec "$CONTAINER" node --version
   assert_output "v$pinned"
 }
