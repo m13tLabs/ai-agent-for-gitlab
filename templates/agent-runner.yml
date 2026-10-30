@@ -5,6 +5,7 @@
 # clones it with GITLAB_AI_AGENT_TOKEN (or GITLAB_TOKEN). Include it only in the dedicated runner project:
 # it sets `workflow:`, so it would disable every other pipeline there.
 spec:
+  description: Runs the AI agent for every project from one central runner project
   inputs:
     stage:
       default: ai
