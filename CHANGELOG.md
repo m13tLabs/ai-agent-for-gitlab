@@ -1,4 +1,131 @@
 
+## [0.10.1](https://github.com/m13tLabs/ai-agent-for-gitlab/compare/v0.10.0...v0.10.1) (2026-11-25)
+
+### Bug Fixes
+
+* **deps:** Update dependency @gitbeaker/rest to v44 ([f556e4b](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/f556e4b7b28bdab3fbbe3559de73d610caeaf220))
+
+
+
+### Dependency Updates
+
+* **deps:** Update dependency @hono/node-server to v2.1.4 ([335a740](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/335a740d7b2fcdf6b226da03c89ad2df4aebec46))
+
+* **deps:** Update cloudtooling/dev-buildbox docker tag to v1.12.4 ([0e74d89](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/0e74d897b9dfac1288b5c6123e43513dae393390))
+
+* **deps:** Update dependency @types/node to v24.19.2 ([eede123](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/eede123147d1208862cfeb3a847a86a4845f84fb))
+
+* **deps:** Update helm/chart-testing-action action to v2.9.0 ([0cb81ce](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/0cb81cea06959a1f1a627a74b245ea09122775d0))
+
+* **deps:** Update dependency python to 3.15 ([e1c0376](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/e1c0376b6784a38db4a2948b1e85fba5a0477ead))
+
+* **deps:** Update dependency opencode-ai to v1.19.0 ([7dbd9ca](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/7dbd9cac101eed0429deaad4b80a6328b038ae16))
+
+* **deps:** Update dependency zod to v4.6.6 ([b6dd181](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/b6dd1819b2391ad7f05f1e62a721dcc216ffcfa9))
+
+* **deps:** Update dependency @hono/node-server to v2.1.5 ([551d979](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/551d97968fabe149d085bee4c594f54680a5c44e))
+
+* **deps:** Update dependency zod to v4.6.7 ([2ecf9c4](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/2ecf9c4ef346da700d839fd8722b9e6a11721709))
+
+* **deps:** Update node.js to v24.22.0 ([28a1fd5](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/28a1fd5b0ee94d26b86cdd2ac1baaf7787aa6f24))
+
+* **deps:** Update dependency @opencode/cli to v2.0.30 ([b59bdc6](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/b59bdc6ad48ad82b7ccf474f96c58bce8217dfc4))
+
+* **deps:** Update dependency @opencode/cli to v2.0.32 ([e34815f](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/e34815f0c77d8cc1facd32dee69704afe518e30d))
+
+* **deps:** Update cloudtooling/dev-buildbox docker tag to v1.12.5 ([15d7b15](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/15d7b156a0b08d74d66858b99b0703a1a15fe4f9))
+
+* **deps:** Update dependency @modelcontextprotocol/sdk to v1.32.2 ([851bac2](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/851bac2f88711e245017b4d6bcc4d3a0830a4d04))
+
+* **deps:** Update dependency hono to v4.13.14 ([e61f251](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/e61f251b32e136cb162a2f9ad89ab865f5f0c43c))
+
+* **deps:** Update dependency @opencode/cli to v2.1.4 ([975e9c1](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/975e9c18883818d01ac2d5733d6b4c1bb8092bad))
+
+* **deps:** Update node.js to v24.22.1 ([acc63f3](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/acc63f37dcd71f00c27aa62747f642232be95e64))
+
+* **deps:** Update dependency @opencode/cli to v2.2.0 ([5663e41](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/5663e4171de6dd7175d1cb38b1119bd2303c138e))
+
+* **deps:** Update dependency redis to v6.3.1 ([c054b85](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/c054b85f390c11923202f211efc63a2a662bb1ab))
+
+* **deps:** Update node.js to v24.22.2 ([07dc4ad](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/07dc4adba958f6c752a2d386a563b20a03e0441a))
+
+* **deps:** Update cloudtooling/dev-buildbox docker tag to v1.13.0 ([da1a708](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/da1a7086e36fc624478f07a2d9d4e2e499f64a27))
+
+* **deps:** Update dependency @opencode/cli to v2.2.2 ([b287aa1](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/b287aa1e40c3b09906e7646cee446be76d7c27e8))
+
+* **deps:** Update dependency @opencode/cli to v2.2.3 ([0f1f37c](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/0f1f37ca8a88770c61fd928e27b4d062414554ca))
+
+* **deps:** Update node.js to v26 ([08076c9](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/08076c9821950918d652484f2c3cdb6c3d93134b))
+
+* **deps:** Update dependency @opencode/cli to v2.2.5 ([3c1bf4f](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/3c1bf4fdb817cfe7f5efcbb79ed39c1b13597ab7))
+
+* **deps:** Update dependency hono to v4.13.16 ([c19c9df](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/c19c9df713f16aaa860976e7d5d6126f10c76718))
+
+* **deps:** Update dependency @hono/node-server to v2.1.6 ([3269fda](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/3269fda455146f1bfbf17e8d2121868ad27493d7))
+
+* **deps:** Update dependency @opencode/cli to v2.2.6 ([36e1734](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/36e1734fbf49d762b0420c67ccc0a137976f421e))
+
+* **deps:** Update dependency hono to v4.13.17 ([9fb38c5](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/9fb38c5a1d2144dda43cdf0ecefbb98da99fbd61))
+
+* **deps:** Update dependency @opencode/cli to v2.2.7 ([0a4747e](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/0a4747ee0fd194722f71659ae14de8fcaa2881df))
+
+* **deps:** Update dependency @hono/node-server to v2.1.7 ([d9d30f7](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/d9d30f77a2f4156a1aaa8bcbaffa3ba045a0a438))
+
+* **deps:** Update dependency hono to v4.13.18 ([8a5dd78](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/8a5dd78dfaf9584789ce899e254d15d1bcb8a21b))
+
+* **deps:** Update node.js to v26.13.1 ([f5e2802](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/f5e2802805cf1b32f336b5ca3bf72a111d0fddcf))
+
+* **deps:** Update dependency @hono/node-server to v2.1.8 ([5d8dea7](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/5d8dea79e23b58736bc314fa8d2566bacb452046))
+
+* **deps:** Update dependency @opencode/cli to v2.3.0 ([52c605d](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/52c605d2b4687802b4bb45b0188c9d5d76925f09))
+
+* **deps:** Update cloudtooling/dev-buildbox docker tag to v1.13.1 ([7c34da2](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/7c34da230e5cad4314950ebd364b396e7c9c42b2))
+
+* **deps:** Update dependency @gitbeaker/rest to v44.1.1 ([1407ac7](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/1407ac735a56fa10c8a8a76c7505eb0304bdcecf))
+
+* **deps:** Update dependency hono to v4.13.19 ([f4d2e92](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/f4d2e9226a0874fd82b4f10dbc4dbaa5fb45977d))
+
+* **deps:** Update dependency @hono/node-server to v2.1.9 ([76b24e9](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/76b24e99e142247f075af62436606b9a605be89d))
+
+* **deps:** Update dependency @opencode/cli to v2.3.2 ([2588e06](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/2588e06654b020f2c3370a9453c31d1a70a14e5c))
+
+* **deps:** Update dependency @hono/node-server to v2.1.11 ([d1fb9d6](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/d1fb9d6a37998660796b9a471cbc230697f018eb))
+
+* **deps:** Update dependency hono to v4.13.20 ([e1d30ae](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/e1d30ae32e1f954ee885d480ddbac56bc5dfd49f))
+
+* **deps:** Update dependency hono to v4.13.21 ([90216a5](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/90216a5efa753699b3604c1d91f7c42126c76237))
+
+* **deps:** Update dependency hono to v4.13.22 ([948d7d9](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/948d7d9917fee05fc97df8e6596412e87a9ef1eb))
+
+* **deps:** Update dependency redis to v6.4.0 ([7cd8085](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/7cd8085b9b0e079950971d27a163e695eb14eaa1))
+
+* **deps:** Update dependency @opencode/cli to v2.4.1 ([5c6af44](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/5c6af44752eb2997def22b1c0aa6cb253fe6cea2))
+
+* **deps:** Update dependency @types/node to v26.6.9 ([868d31a](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/868d31abb8a186a703a135e326f022707a579c49))
+
+* **deps:** Update dependency @gitbeaker/rest to v44.1.10 ([ce0b7fa](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/ce0b7fa5b8a76a9f605373db3c20571e964fbce9))
+
+* **deps:** Update dependency chart-testing to v3.15.0 ([0eed917](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/0eed917b39ce3324e531017d5cd2fa550c7b0711))
+
+* **deps:** Update dependency @types/node to v26.6.10 ([fce2adb](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/fce2adbc98129a8cf5992afb4469e8f17b273316))
+
+
+
+### Documentation
+
+* Restructure docs ([48bc719](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/48bc7198fa94b754ffcfb8b99853a5cfe0017f1d))
+
+* Adding template description ([f752e20](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/f752e20cdb0be0a6397cd148de69713a58a4e487))
+
+
+
+### Features
+
+* **OpenCode:** Upgrade to V2 ([8f100ba](https://github.com/m13tLabs/ai-agent-for-gitlab/commit/8f100ba2eda2b4da73c770525f8383bbe8978034))
+
+
+
+
 ## [0.10.0](https://github.com/m13tLabs/ai-agent-for-gitlab/compare/v0.9.1...v0.10.0) (2026-10-07)
 
 ### Dependency Updates
